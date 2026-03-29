@@ -78,13 +78,58 @@ int num_words(FILE* infile) {
  * 1 in the event of any errors (e.g. wclist or infile is NULL)
  * and 0 otherwise.
  */
-int count_words(WordCount** wclist, FILE* infile) { return 0; }
+//TODO
+int count_words(WordCount** wclist, FILE* infile) { 
+  if (wclist == NULL || infile == NULL) {
+    fprintf(stderr, "Error: wclist or infile is NULL\n");
+    return 1;
+  }
+  char word[MAX_WORD_LEN+1];
+  int c;
+  int len =0;
+
+  while(( c = fgetc(infile)) != EOF){
+    if(isalpha(c)){
+      if(len<MAX_WORD_LEN){
+        word[len++] = tolower(c);
+      }
+    }else{
+      if(len>1){
+        word[len] = '\0';
+        if(add_word(wclist, word) != 0){
+          fprintf(stderr, "Error: Failed to add word to list\n");
+          return 1;
+        }
+      }
+      len =0;
+    }
+  }
+  if(len>1){
+    word[len] = '\0';
+    if(add_word(wclist, word) != 0){
+      fprintf(stderr, "Error: Failed to add word to list\n");
+      return 1;
+    }
+  }
+  return 0;
+}
 
 /*
  * Comparator to sort list by frequency.
  * Useful function: strcmp().
+ * True : wc1<wc2   False: wc1 > wc2
  */
-static bool wordcount_less(const WordCount* wc1, const WordCount* wc2) { return 0; }
+static bool wordcount_less(const WordCount* wc1, const WordCount* wc2) {
+  if(wc1->count < wc2->count){
+    return true;
+  }
+  if(wc1->count > wc2->count){
+    return false;
+  }
+  else{
+    return strcmp(wc1->word, wc2->word)<0;
+  }
+}
 
 // In trying times, displays a helpful message.
 static int display_help(void) {
@@ -103,11 +148,11 @@ static int display_help(void) {
 int main(int argc, char* argv[]) {
 
   // Count Mode (default): outputs the total amount of words counted
-  bool count_mode = true;
+  bool count_mode = false;
   int total_words = 0;
 
   // Freq Mode: outputs the frequency of each word
-  bool freq_mode = false;
+  bool freq_mode = true;
 
   FILE* infile = NULL;
 
@@ -156,7 +201,11 @@ int main(int argc, char* argv[]) {
         perror(argv[argi]);
         return 1;
       }
+      if(count_mode){
       total_words += num_words(infile);
+      }else{
+        count_words(&word_counts, infile);
+      }
       fclose(infile);
     }
   }
@@ -165,7 +214,6 @@ int main(int argc, char* argv[]) {
     printf("The total number of words is: %i\n", total_words);
   } else {
     wordcount_sort(&word_counts, wordcount_less);
-
     printf("The frequencies of each word are: \n");
     fprint_words(word_counts, stdout);
   }
