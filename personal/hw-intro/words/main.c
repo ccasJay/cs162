@@ -31,6 +31,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>
 
 #include "word_count.h"
+/*Note 1: Using functions such as rewind and fseek will cause some issues with stdin that might not be apparent when testing locally, so you should avoid using those in your implementation.
+
+Note 2: Use appropriate macros from stdio.h whenever possible. These include stdin/stdout and EOF.*/
 
 /* Global data structure tracking the words encountered */
 WordCount *word_counts = NULL;
@@ -46,7 +49,18 @@ WordCount *word_counts = NULL;
  */
 int num_words(FILE* infile) {
   int num_words = 0;
-
+  int c;
+  bool in_word = false;
+  while ((c = fgetc(infile)) != EOF) {
+    if (isalpha(c)) { //the isalpha is a function in ctype.h that checks if a character is an alphabetic character
+      if (!in_word) {
+        num_words++; 
+        in_word = true;
+      }
+    } else {
+      in_word = false;
+    }
+  }
   return num_words;
 }
 
