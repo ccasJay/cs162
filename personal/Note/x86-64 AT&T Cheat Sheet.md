@@ -76,39 +76,39 @@ void foo(int a, int b) {
 
 ```asm
 p:
-    .zero 4
+    .zero 4 // reserve 4 bytes for int p
 
 bar:
-    pushl %ebp
-    movl %esp, %ebp
-    subl $16, %esp
-    movl 8(%ebp), %edx
-    movl 12(%ebp), %eax
+    pushl %ebp   // Save old base pointer
+    movl %esp, %ebp   // Set new base pointer
+    subl $16, %esp  // Allocate space for local variable w and saved registers,use subl because stack grows downwards
+    movl 8(%ebp), %edx  
+    movl 12(%ebp), %eax   
     addl %edx, %eax
-    subl 16(%ebp), %eax
-    movl %eax, -4(%ebp)
-    movl -4(%ebp), %eax
+    subl 16(%ebp), %eax  //this step is to subtract z from the sum of x and y, since z is located at 16(%ebp)  
+    movl %eax, -4(%ebp)   // Store w in local variable
+    movl -4(%ebp), %eax   // Move w to return value register
     addl $1, %eax
     leave
     ret
 
 foo:
-    pushl %ebp
+    pushl %ebp 
     movl %esp, %ebp
-    pushl %ebx
-    subl $4, %esp
-    movl 8(%ebp), %edx
-    movl 12(%ebp), %eax
-    leal (%edx, %eax), %ebx
-    subl $4, %esp
+    pushl %ebx  // Save callee-saved register ebx
+    subl $4, %esp   
+    movl 8(%ebp), %edx  // Move a to edx
+    movl 12(%ebp), %eax   //Move b to eax
+    leal (%edx, %eax), %ebx   // Compute a + b and store in ebx
+    subl $4, %esp  // 压入参数前，先point下移4字节确保stack对齐
     pushl $5
     pushl $4
     pushl $3
     call bar
-    addl $16, %esp
-    addl %ebx, %eax
-    movl %eax, p
-    nop
+    addl $16, %esp  // Clean up parameters from stack (3 parameters * 4 bytes each)
+    addl %ebx, %eax // Add a + b to the return value of bar
+    movl %eax, p // Store result in global variable p
+    nop   // No operation, can be used for padding
     movl -4(%ebp), %ebx
     leave
     ret
