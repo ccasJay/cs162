@@ -35,7 +35,7 @@ Prefix: `e` = 32-bit, `r` = 64-bit, `x` = lower 16 bits.
 
 #### Calling Convention (i386 System V ABI)
 
-**Caller**  
+**Caller**  %eax, %ecx, %edx
 Before `call`:
 1. Save caller-saved GPRs to stack if needed (`pushl src`)
 2. Push parameters to stack in reverse order (right-to-left), pad for 16-byte alignment
@@ -44,7 +44,7 @@ After `call`:
 1. Remove parameters from stack
 2. Restore caller-saved GPRs (`popl dest`)
 
-**Callee**  
+**Callee**  %ebx, %esi, %edi, %ebp
 Before function logic:
 1. Save old `%ebp` (`pushl %ebp`)
 2. Allocate stack space for locals
