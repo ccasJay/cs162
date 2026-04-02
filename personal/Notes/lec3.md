@@ -35,7 +35,7 @@
     - interrupt handle 不属于任何进程
     - 在任务完成后重启
     - 典型的处理流程：硬件自动保存(cpu将当前的pc,flags压入kernel stack) -> prologue(存相关的register) -> 执行任务 -> epliogue -> iret(同时恢复PC和切换CPU模式)
-    __ Pack up a queue and pass off to an OS thread to do the work, then restart the interrupted process.__
+    __Pack up a queue and pass off to an OS thread to do the work, then restart the interrupted process.__
     - Non-maskable interrupt(NMI): 不能被屏蔽的中断，通常用于处理紧急情况，比如硬件故障等。
 
     ![alt text](image-3.png)
