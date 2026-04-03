@@ -24,9 +24,9 @@
 
 ### 3 types of Kernel Mode Transfer
 1. Syscall: 进程管理，文件io, 内存管理， 网络与通信，设备与信息维护
-2. Interrupt: External asynchronous event triggers context switch __force the system to go forom user mode into the kernel to handle issues, independent of user process__
+2. Interrupt: External asynchronous event triggers context switch __force the system to go from user mode into the kernel to handle issues, independent of user process__
 3. Trap or Exception: internal synchronous event in process triggers context switch,通常用于处理错误或异常情况，比如除零错误、非法指令等。当发生trap时，CPU会自动切换到内核模式，并跳转到相应的异常处理程序来处理这个事件。
-
+for 
 ### Interrupt Control
 - 中断过程user process进程不可见
     - Occurs between instrucitons, restarted transparently(means the user process doesn't know an interrupt happened, it just continues executing as if nothing happened)
@@ -47,12 +47,12 @@
 - Atomic transfer of control(原子控制转移): 指在处理中断时，CPU会自动保存当前的状态（包括程序计数器、寄存器等），并切换到内核模式执行中断处理程序。这个过程是原子的，意味着在切换过程中不会被其他中断打断，确保了中断处理的完整性和安全性。
 - Transparent restartable execution(透明可重启执行): 当中断处理完成后，CPU会自动恢复之前保存的状态，并继续执行被中断的用户进程，就好像中断从未发生过一样。这种机制确保了用户进程的连续性和稳定性。  
 
-### [[separate kernel stacks]]
+### separate kernel stacks
 - Two-stack model:
   - OS thread has interrupt stack + user stack
   - Syscall handler copies user args to kernel space before invoking specific function(意思是在处理系统调用时，内核会将用户空间的参数复制到内核空间，以确保安全性和隔离性。这样，即使用户空间的参数被修改，也不会影响内核空间的执行。)
 
-### [[kernel System Call Handler]]
+### kernel System Call Handler
 - vector through well-defined syscall entry points
 - localte arguments: in registers or on user stack
 - copy arguments: from user mem into kernel mem
@@ -60,9 +60,10 @@
 - copy results back: into user mem
 
 
-### [[Creating Processes]]
+### Creating Processes
 - pid_t fork() - create a copy of the current process, return 0 to child and pid to parent
     - when return value > 0: parent process, return child's pid
     - when return value == 0: running in new Child process
     - when return value < 0: error   
 - state of original process duplicated in both Parent and child
+
