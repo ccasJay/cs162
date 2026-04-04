@@ -11,6 +11,7 @@
 - `l` = long (32 bits)
 
 ```asm
+// [inst] src, dest
 mov 8(%ebx), %eax              # Move value at [ebx + 8] to eax
 mov %ecx, -4(%esi, %ebx, 8)    # Move ecx to [esi + ebx*8 - 4]
 
@@ -20,16 +21,16 @@ lea 8(%ebx), %eax              # Move address (ebx + 8) to eax, not the value at
 #### General Purpose Registers (GPR)
 Prefix: `e` = 32-bit, `r` = 64-bit, `x` = lower 16 bits.
 
-| Name | Purpose             |
-|------|---------------------|
-| ax   | Accumulator         |
-| bx   | Base                |
-| cx   | Counter             |
-| dx   | Data                |
-| sp   | Stack Pointer       |
-| bp   | Base Pointer        |
-| si   | Source Index        |
-| di   | Destination Index   |
+| Name | Purpose           |
+| ---- | ----------------- |
+| ax   | Accumulator       |
+| bx   | Base              |
+| cx   | Counter           |
+| dx   | Data              |
+| sp   | Stack Pointer     |
+| bp   | Base Pointer      |
+| si   | Source Index      |
+| di   | Destination Index |
 
 ---
 
