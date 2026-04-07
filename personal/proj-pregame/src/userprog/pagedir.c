@@ -1,3 +1,4 @@
+/*Manages the page tables. You probably won’t need to modify this code, but you may want to call some of these functions.*/
 #include "userprog/pagedir.h"
 #include <stdbool.h>
 #include <stddef.h>

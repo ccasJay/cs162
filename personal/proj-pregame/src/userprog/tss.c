@@ -1,3 +1,4 @@
+/*This file manages one particular segment, the Task-State Segment (TSS), which is used for 80x86 architectural task switching. Pintos uses the TSS only for switching stacks when a user process enters an interrupt handler, as does Linux. You should not need to modify these files for any of the projects. You can read the code if you’re interested in how the TSS works.*/
 #include "userprog/tss.h"
 #include <debug.h>
 #include <stddef.h>

@@ -1,3 +1,4 @@
+/*Contains the struct process definition, and thus that of the Pintos process control block.*/
 #ifndef USERPROG_PROCESS_H
 #define USERPROG_PROCESS_H
 

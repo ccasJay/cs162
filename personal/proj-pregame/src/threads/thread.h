@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "threads/synch.h"
 #include "threads/fixed-point.h"
+/*Contains the struct thread definition, which is the Pintos thread control block. The fields in #ifdef USERPROG ... #endif are collectively the process control block. We expect that you will add fields to the process control block in this project. The comments in this file may prove useful if you experience a kernel panic in thread_current(). */
 
 /* States in a thread's life cycle. */
 enum thread_status {

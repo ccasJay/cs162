@@ -1,3 +1,4 @@
+/*Manages the hardware FPU. May be useful for reference during the relevant part of Project 1.*/
 #ifndef __LIB_FLOAT_H
 #define __LIB_FLOAT_H
 

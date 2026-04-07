@@ -1,3 +1,4 @@
+/*This is a skeleton system call handler. Currently, it only supports the exit syscall. Much of your work in Project 1 will take place here.*/
 #include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>

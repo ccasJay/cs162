@@ -1,3 +1,4 @@
+/*Provides library functions for user programs to invoke system calls from a C program. Each function uses inline assembly code to prepare the syscall arguments and invoke the system call. We do expect you to understand the calling conventions used for syscalls (also in Reference).*/
 #include <syscall.h>
 #include "../syscall-nr.h"
 #include <pthread.h>

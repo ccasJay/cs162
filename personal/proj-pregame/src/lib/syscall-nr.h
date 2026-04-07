@@ -1,3 +1,4 @@
+/*This file defines the syscall numbers for each syscall.*/
 #ifndef __LIB_SYSCALL_NR_H
 #define __LIB_SYSCALL_NR_H
 

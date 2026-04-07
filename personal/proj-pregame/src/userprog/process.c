@@ -1,3 +1,4 @@
+/*Contains implementations for the definitions in process.h. Also handles the loading of ELF binaries, starts processes, and switches page tables on context switch. You will likely need to modify this component in order to complete the project.*/
 #include "userprog/process.h"
 #include <debug.h>
 #include <inttypes.h>
@@ -472,8 +473,10 @@ static bool setup_stack(void** esp) {
   kpage = palloc_get_page(PAL_USER | PAL_ZERO);
   if (kpage != NULL) {
     success = install_page(((uint8_t*)PHYS_BASE) - PGSIZE, kpage, true);
-    if (success)
-      *esp = PHYS_BASE;
+    if (success){
+      *esp =(void*) (PHYS_BASE-16);
+      *((int*)((uint8_t*)*esp + sizeof(void*))) =1;
+    }
     else
       palloc_free_page(kpage);
   }

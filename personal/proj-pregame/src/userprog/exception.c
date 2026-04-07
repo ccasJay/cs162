@@ -1,3 +1,4 @@
+/*Handle exceptions. Currently all exceptions simply print a message and terminate the process. Some, but not all, solutions to Project Userprog involve modifying page_fault() in this file.*/
 #include "userprog/exception.h"
 #include <inttypes.h>
 #include <stdio.h>
