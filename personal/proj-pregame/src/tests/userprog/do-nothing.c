@@ -10,4 +10,9 @@ int main(int argc UNUSED, char* argv[] UNUSED) { return 162; }
 
 /* task6: The int $0x30 instruction switches to kernel mode and pushes an interrupt stack frame onto the kernel stack for this process. Continue stepping through instruction-by-instruction until you reach syscall_handler. What are the values of args[0] and args[1], and how do they relate to your answer to the previous question?
 (gdb) x/2xw $esp
-0xc010bf64:     0xc010bfa4      0xc00221ea*/
+0xc010bf64:     0xc010bfa4     0xc00221ea*/
+//the data in the kernel stack
+// 0xc010bfa4 是intr_entry在调用 intr_handler 时指向 struct intr_frame* 的指针
+// 0xc00221ea 是call intr_handler 的返回地址
+// args[0] args[1] equal to task5 output
+// struct intr_frame是用户态切换到内核态前留下的快照.用户转道内核并不是转移数据，而是在内核stack 中存了一个指向用户态的pointer
