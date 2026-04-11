@@ -39,13 +39,11 @@ void init_words(word_count_list_t* wclist) { /* TODO */
 
 size_t len_words(word_count_list_t* wclist) {
   /* TODO */
-  if(list_empty(wclist))perror("list is empty");
   return list_size(wclist);
 }
 
 word_count_t* find_word(word_count_list_t* wclist, char* word) {
   /* TODO */
-  if(list_empty(wclist))perror("list is empty");
   struct list_elem* e;
   struct list_elem* begin = list_begin(wclist);
   struct list_elem* end = list_end(wclist);
@@ -55,13 +53,11 @@ word_count_t* find_word(word_count_list_t* wclist, char* word) {
       return entry;
     }
   }
-  perror("word not found");
   return NULL;
 }
 
 word_count_t* add_word(word_count_list_t* wclist, char* word) {
   /* TODO */
-  if(list_empty(wclist))perror("list is empty");
   word_count_t* found = find_word(wclist,word);
   if(found != NULL){
     found->count++;
@@ -69,16 +65,15 @@ word_count_t* add_word(word_count_list_t* wclist, char* word) {
   }
 
   word_count_t* wc = malloc(sizeof(word_count_t));
-  wc->word = word;
+  wc->word = strdup(word);
   wc->count = 1;
   list_push_back(wclist, &wc->elem);
-  return NULL;
+  return wc;
 }
 
 void fprint_words(word_count_list_t* wclist, FILE* outfile) {
   /* TODO */
   /* Please follow this format: fprintf(<file>, "%i\t%s\n", <count>, <word>); */
-  if(list_empty(wclist))perror("list is empty");
   struct list_elem* e;
   struct list_elem* begin = list_begin(wclist);
   struct list_elem* end = list_end(wclist);
