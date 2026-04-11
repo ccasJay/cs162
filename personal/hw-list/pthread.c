@@ -14,8 +14,10 @@ Read pthread.c carefully. Then, run make and run pthread multiple times and obse
 3. Based on the program’s output, do multiple threads share the same global variables?
 => Yes, 所有线程共享同一个global variable common，因为它们的地址是相同的，并且在输出中显示了相同的地址和值。
 4. Based on the program’s output, what is the value of void *threadid? How does this relate to the variable’s type (void *)?
-=> Thread id like #1,#2,etc
+=> Thread id like #1,#2,类型为long， 而pthread_create()中要求类型为void*,所以在调用pthread_create()时，将long类型的t强制转换为void*类型。这种转换允许我们将线程ID作为参数传递给线程函数threadfun()，并在函数内部使用它来标识不同的线程。  
 5. Using the first command line argument, create a large number of threads in pthread. Do all threads run before the program exits? Why or why not? Note: Please be precise. Vague responses will not be given credit.
+=> 如果所有线程都创建成功，那么所有创建的线程都能run；但是当线程数过大，pthread_create()可能会失败，导致一些请求的线程无法run
+同时，pthread_exit(NULL)只结束main thread，如果换成return，其它所有thread也会一并结束
 */
 
 #include <stdio.h>
