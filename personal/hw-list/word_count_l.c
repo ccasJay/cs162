@@ -50,7 +50,7 @@ word_count_t* find_word(word_count_list_t* wclist, char* word) {
   struct list_elem* begin = list_begin(wclist);
   struct list_elem* end = list_end(wclist);
   for(e = begin; e != end; e = list_next(e)){
-    word_count_t *entry = list_entry(e,  word_count_t, &wclist);
+    word_count_t *entry = list_entry(e,  word_count_t, elem);
     if(strcmp(entry->word, word) == 0){  //strcmp()是C语言中用于比较两个字符串是否相等的函数。当strcmp()返回0时，表示两个字符串相等。
       return entry;
     }
@@ -71,7 +71,7 @@ word_count_t* add_word(word_count_list_t* wclist, char* word) {
   word_count_t* wc = malloc(sizeof(word_count_t));
   wc->word = word;
   wc->count = 1;
-  list_push_back(wclist, &wc->word);
+  list_push_back(wclist, &wc->elem);
   return NULL;
 }
 
@@ -83,15 +83,15 @@ void fprint_words(word_count_list_t* wclist, FILE* outfile) {
   struct list_elem* begin = list_begin(wclist);
   struct list_elem* end = list_end(wclist);
   for(e = begin; e != end; e = list_next(e)){
-    word_count_t *entry = list_entry(e,  word_count_t, &wclist);
+    word_count_t *entry = list_entry(e,  word_count_t, elem);
     fprintf(outfile, "%i\t%s\n", entry->count, entry->word);
   }
 }
 
 static bool less_list(const struct list_elem* ewc1, const struct list_elem* ewc2, void* aux) {
   /* TODO */
-  word_count_t* wc1 = list_entry(ewc1, word_count_t, &aux);
-  word_count_t* wc2 = list_entry(ewc2, word_count_t, &aux);
+  word_count_t* wc1 = list_entry(ewc1, word_count_t, elem);
+  word_count_t* wc2 = list_entry(ewc2, word_count_t, elem);
   bool (*less)(const word_count_t*, const word_count_t*) = aux;
   return less(wc1,wc2);
 }
