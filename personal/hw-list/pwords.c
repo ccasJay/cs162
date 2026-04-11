@@ -31,6 +31,22 @@
 
 #include "word_count.h"
 #include "word_helpers.h"
+//全局共享,让多线程访问同一块内存地址
+word_count_list_t* global_word_counts;
+
+/*返回类型为(void*)的线程中的执行函数*/
+void* process_file(void* arg){
+  const char* filename = (const char*)arg;
+  FILE* fp= fopen(filename, "r");
+  if(fp){
+    count_words(global_word_counts,fp);
+    fclose(fp);
+  } else{
+    perror("Failed to open file");
+  }
+  pthread_exit(NULL);
+}
+
 
 /*
  * main - handle command line, spawning one thread per file.
@@ -39,12 +55,26 @@ int main(int argc, char* argv[]) {
   /* Create the empty data structure. */
   word_count_list_t word_counts;
   init_words(&word_counts);
+  global_word_counts =&word_counts;
 
   if (argc <= 1) {
     /* Process stdin in a single thread. */
     count_words(&word_counts, stdin);
   } else {
     /* TODO */
+    long t;
+    pthread_t threads[argc-1];
+    for(t = 0 ;t<argc-1;t++){
+      int rc=pthread_create(&threads[t],NULL,process_file,(void*)argv[t+1]);
+      if(rc){
+        printf("ERROR; return code from pthread_create() is %d\n", rc);
+        exit(-1);
+      }
+    }
+
+    for(int t =0; t<argc-1;t++){
+      pthread_join(threads[t],NULL);
+    }
   }
 
   /* Output final result of all threads' work. */
