@@ -120,6 +120,29 @@ void init_shell() {
   }
 }
 
+/*program execution*/
+int execute_program(struct tokens* tokens){
+  int n = tokens_get_length(tokens);
+  if(n == 0){
+    return -1;
+  }
+  char** argv = calloc(n+1,sizeof(char*));
+  for(int i =0;i<n;i++){
+    argv[i] = tokens_get_token(tokens,i);
+  }
+
+  //run the program in the child thread
+  pid_t pid = fork();
+  if(pid == 0){
+    execv(argv[0],argv);
+  }else if(pid >0)return pid;
+  else{
+    exit(1);
+  }
+  waitpid(pid,NULL,0);
+  return 0;
+}
+
 int main(unused int argc, unused char* argv[]) {
   init_shell();
 
@@ -141,7 +164,7 @@ int main(unused int argc, unused char* argv[]) {
       cmd_table[fundex].fun(tokens);
     } else {
       /* REPLACE this to run commands as programs. */
-      fprintf(stdout, "This shell doesn't know how to run programs.\n");
+      execute_program(tokens);
     }
 
     if (shell_is_interactive)
