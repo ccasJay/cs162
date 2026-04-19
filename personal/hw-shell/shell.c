@@ -130,18 +130,45 @@ int execute_program(struct tokens* tokens){
   for(int i =0;i<n;i++){
     argv[i] = tokens_get_token(tokens,i);
   }
-
-  //run the program in the child thread
-  pid_t pid = fork();
-  if(pid == 0){
-    execv(argv[0],argv);
-  }else if(pid >0)return pid;
-  else{
-    exit(1);
+  char *cmd = argv[0];
+  char full_path[4096];
+  int found = 0;
+  if(strchr(cmd,'/')!= NULL){
+    if(access(cmd,X_OK)==0){
+      strncpy(full_path,cmd,sizeof(full_path));
+      found = 1;
+    }
+  }else{
+    char* path_env = getenv("PATH");
+    char *path_copy = strdup(path_env); //make a copy of PATH
+    if(path_copy == NULL)return -1;
+    char *saveptr;
+    char *token = strtok_r(path_copy,":",&saveptr);
+    while(token != NULL){
+      snprintf(full_path,sizeof(full_path),"%s/%s",token,cmd);
+      if(access(full_path,X_OK) == 0){
+        found =1;
+        break;
+      }
+      token = strtok_r(NULL,":",&saveptr);
+    }
+    free(path_copy);
   }
-  waitpid(pid,NULL,0);
+  //run the program in the child thread
+  if(found){
+    pid_t pid = fork();
+    if(pid == 0){
+      execv(full_path,argv);
+      }else if(pid >0)return pid;
+    else{
+      exit(1);
+    }
+    waitpid(pid,NULL,0);
+  }
+  free(argv);
   return 0;
 }
+ 
 
 int main(unused int argc, unused char* argv[]) {
   init_shell();
