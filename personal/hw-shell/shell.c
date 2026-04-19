@@ -126,6 +126,9 @@ int execute_program(struct tokens* tokens){
   if(n == 0){
     return -1;
   }
+  bool InRedirection =false;
+  bool OutRedirection = false;
+
   char** argv = calloc(n+1,sizeof(char*));
   for(int i =0;i<n;i++){
     argv[i] = tokens_get_token(tokens,i);
@@ -133,6 +136,26 @@ int execute_program(struct tokens* tokens){
   char *cmd = argv[0];
   char full_path[4096];
   int found = 0;
+  char *redirection_file_in = NULL;
+  char *redirection_file_out = NULL;
+  
+  //scan the redirection "<" or ">"
+  for(int i =0;i<n;i++){
+    if(strcmp(argv[i],"<") == 0 && i+1<n){
+      InRedirection = true;
+      redirection_file_in= argv[i+1];
+      argv[i] = NULL;
+      argv[i+1] = NULL;
+      i++;
+    }else if(strcmp(argv[i],">") == 0){
+      OutRedirection = true;
+      redirection_file_out = argv[i+1];
+      argv[i] = NULL;
+      argv[i+1] = NULL;
+      i++;
+    }
+  }
+  //scan the /, whether it's already the fullpath
   if(strchr(cmd,'/')!= NULL){
     if(access(cmd,X_OK)==0){
       strncpy(full_path,cmd,sizeof(full_path));
@@ -158,12 +181,31 @@ int execute_program(struct tokens* tokens){
   if(found){
     pid_t pid = fork();
     if(pid == 0){
+      if(InRedirection){ // in redirection
+        int fd = open(redirection_file_in,O_RDONLY);
+        if(fd < 0){
+          perror("open error");
+          exit(1);
+        }
+        dup2(fd,STDIN_FILENO);
+        close(fd);
+      }if(OutRedirection){ // out redirection
+        int fd = open(redirection_file_out,O_WRONLY|O_CREAT|O_TRUNC,0644); //0644 is the permission for the created file, the owner can read and write, while the group and others can only read
+        if(fd < 0){
+          perror("open error");
+          exit(1);
+        }
+        dup2(fd,STDOUT_FILENO);
+        close(fd);
+      }
       execv(full_path,argv);
-      }else if(pid >0)return pid;
+      }else if(pid >0){
+        waitpid(pid,NULL,0);
+      }
     else{
+      perror("fork error");
       exit(1);
     }
-    waitpid(pid,NULL,0);
   }
   free(argv);
   return 0;
