@@ -102,6 +102,9 @@ void init_shell() {
   /* Check if we are running interactively */
   shell_is_interactive = isatty(shell_terminal);
 
+  /* Always initialize shell_pgid */
+  shell_pgid = getpid();
+
   if (shell_is_interactive) {
     /* If the shell is not currently in the foreground, we must pause the shell until it becomes a
      * foreground process. We use SIGTTIN to pause the shell. When the shell gets moved to the
@@ -118,6 +121,11 @@ void init_shell() {
     /* Save the current termios to a variable, so it can be restored later. */
     tcgetattr(shell_terminal, &shell_tmodes);
   }
+  signal(SIGINT, SIG_IGN); //ignore the ctrl-C signal
+  signal(SIGTSTP,SIG_IGN); //ignore the ctrl-Z signal
+  signal(SIGQUIT,SIG_IGN); //ignore the ctrl-\ signal
+  signal(SIGTTOU,SIG_IGN); //ignore the background write/tcsetpgrp signal
+  signal(SIGTTIN,SIG_IGN); //ignore the background read signal
 }
 
 /*program execution*/
@@ -217,6 +225,7 @@ bool is_pipe(struct tokens* tokens){
   return false;
 }
 
+/*execute the program using pipe*/
 int execute_pipe(struct tokens* tokens){
   int num_procs = tokens_get_length(tokens);
   int pipe_arr[num_procs-1][2];
@@ -224,10 +233,27 @@ int execute_pipe(struct tokens* tokens){
   for(int i =0;i<num_procs-1;i++){
     pipe(pipe_arr[i]);
   }
+  
   // fork loop
+  pid_t c_pid, first_child_pgid = -1;
   for(int i =0;i<num_procs;i++){
-    pid_t pid = fork();
-    if(pid == 0){
+     c_pid = fork();
+    // set the pgid of the child process to itself, so that they can be in the same process
+    if(c_pid == 0){
+      if(i == 0){
+        // First child creates the process group
+        setpgrp();
+      } else {
+        // Subsequent children join the first child's process group
+        setpgid(0, first_child_pgid);
+      }
+      
+      signal(SIGINT, SIG_DFL); //restore the default signal handler for ctrl-C
+      signal(SIGTSTP,SIG_DFL); //restore the default signal handler for ctrl-Z
+      signal(SIGQUIT,SIG_DFL); //restore the default signal handler for ctrl-\. 
+      signal(SIGTTOU,SIG_DFL);
+      signal(SIGTTIN,SIG_DFL);
+      
       //edeg case
       if(i == 0)
       {
@@ -246,14 +272,48 @@ int execute_pipe(struct tokens* tokens){
         close(pipe_arr[j][0]);
         close(pipe_arr[j][1]);
       }
-    }
     execute_program(tokens);
+    }else if(c_pid>0){
+      if(i == 0){
+        first_child_pgid = c_pid;
+        // 父进程也确保子进程在独立进程组中
+        if(setpgid(c_pid, c_pid) == -1) {
+          perror("parent setpgid in pipe failed");
+        }
+        if(shell_is_interactive) {
+          if(tcsetpgrp(0, first_child_pgid) == -1) {
+            perror("tcsetpgrp to pipeline failed");
+          }
+        }
+      } else {
+        // 后续子进程加入第一个子进程的进程组
+        if(setpgid(c_pid, first_child_pgid) == -1) {
+          perror("parent setpgid for later child failed");
+        }
+      }
+    }
   }
+  
   //close the FDs in the parent process
   for(int i =0;i<num_procs-1;i++){
     close(pipe_arr[i][0]);
     close(pipe_arr[i][1]);
   }
+  
+  // Wait for pipeline children; return control if they are stopped by Ctrl-Z.
+  int status;
+  pid_t wpid;
+  while((wpid = waitpid(-first_child_pgid, &status, WUNTRACED)) > 0) {
+    if (WIFSTOPPED(status)) {
+      break;
+    }
+  }
+  
+  // restore shell to foreground
+  if(shell_is_interactive) {
+    tcsetpgrp(0, shell_pgid);
+  }
+  
   return 0;
 }
 
@@ -282,12 +342,44 @@ int main(unused int argc, unused char* argv[]) {
     }
     else {
       /* REPLACE this to run commands as programs. */
-      pid_t pid = fork();
-      if(pid == 0){
+      pid_t c_pid;
+      c_pid = fork();
+      if(c_pid == 0){
+        // 子进程
+        if(setpgrp() == -1) {
+          perror("setpgrp failed");
+          exit(1);
+        }
+        signal(SIGINT, SIG_DFL); //restore the default signal handler for ctrl-C
+        signal(SIGTSTP,SIG_DFL); //restore the default signal handler for ctrl-Z
+        signal(SIGQUIT,SIG_DFL); //restore the default signal handler for ctrl-\ .
+        signal(SIGTTOU,SIG_DFL);
+        signal(SIGTTIN,SIG_DFL);
         execute_program(tokens);
         exit(0);
-      }else if(pid > 0){
-        waitpid(pid,NULL,0);
+      }else if(c_pid > 0){
+        // 父进程也要确保子进程在独立进程组中，避免竞态条件
+        if(setpgid(c_pid, c_pid) == -1) {
+          perror("parent setpgid failed");
+        }
+        if(shell_is_interactive) {
+          if(tcsetpgrp(0, c_pid) == -1) {
+            perror("tcsetpgrp to child failed");
+          }
+        }
+        int status;
+        pid_t wait_result;
+        do {
+          wait_result = waitpid(c_pid, &status, WUNTRACED);
+        } while (wait_result == -1 && errno == EINTR);
+        if (wait_result == -1) {
+          perror("waitpid failed");
+        }
+        if(shell_is_interactive) {
+          if(tcsetpgrp(0, shell_pgid) == -1) {
+            perror("tcsetpgrp to shell failed");
+          }
+        }
       }else {
         perror("fork error");
       }
