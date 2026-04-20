@@ -179,8 +179,6 @@ int execute_program(struct tokens* tokens){
   }
   //run the program in the child thread
   if(found){
-    pid_t pid = fork();
-    if(pid == 0){
       if(InRedirection){ // in redirection
         int fd = open(redirection_file_in,O_RDONLY);
         if(fd < 0){
@@ -199,18 +197,66 @@ int execute_program(struct tokens* tokens){
         close(fd);
       }
       execv(full_path,argv);
-      }else if(pid >0){
-        waitpid(pid,NULL,0);
-      }
-    else{
-      perror("fork error");
-      exit(1);
     }
-  }
   free(argv);
   return 0;
 }
- 
+
+//whether use pipe
+bool is_pipe(struct tokens* tokens){
+  int n = tokens_get_length(tokens);
+  if(strcmp(tokens_get_token(tokens,0), "|") ==0 || strcmp(tokens_get_token(tokens,n-1), "|") ==0){
+    fprintf(stderr, "Error: pipe cannot be the first or last token\n");
+    return false;
+  }
+  for(int i =0;i<n;i++){
+    if(strcmp(tokens_get_token(tokens,i),"|") == 0){
+      return true;
+    }
+  }
+  return false;
+}
+
+int execute_pipe(struct tokens* tokens){
+  int num_procs = tokens_get_length(tokens);
+  int pipe_arr[num_procs-1][2];
+  //pre-create the pipes
+  for(int i =0;i<num_procs-1;i++){
+    pipe(pipe_arr[i]);
+  }
+  // fork loop
+  for(int i =0;i<num_procs;i++){
+    pid_t pid = fork();
+    if(pid == 0){
+      //edeg case
+      if(i == 0)
+      {
+        dup2(pipe_arr[0][1],STDOUT_FILENO);
+      }
+      if(i == num_procs-1)
+      {
+         dup2(pipe_arr[i][0],STDIN_FILENO);
+      }else // change the stdin and stdout for the middle processes
+      {
+        dup2(pipe_arr[i-1][0],STDIN_FILENO);
+        dup2(pipe_arr[i][1],STDOUT_FILENO);
+      }
+      //close all the FDs in the child process
+      for(int j =0;j<num_procs-1;j++){
+        close(pipe_arr[j][0]);
+        close(pipe_arr[j][1]);
+      }
+    }
+    execute_program(tokens);
+  }
+  //close the FDs in the parent process
+  for(int i =0;i<num_procs-1;i++){
+    close(pipe_arr[i][0]);
+    close(pipe_arr[i][1]);
+  }
+  return 0;
+}
+
 
 int main(unused int argc, unused char* argv[]) {
   init_shell();
@@ -231,9 +277,20 @@ int main(unused int argc, unused char* argv[]) {
 
     if (fundex >= 0) {
       cmd_table[fundex].fun(tokens);
-    } else {
+    }else if(is_pipe(tokens)){
+      execute_pipe(tokens);
+    }
+    else {
       /* REPLACE this to run commands as programs. */
-      execute_program(tokens);
+      pid_t pid = fork();
+      if(pid == 0){
+        execute_program(tokens);
+        exit(0);
+      }else if(pid > 0){
+        waitpid(pid,NULL,0);
+      }else {
+        perror("fork error");
+      }
     }
 
     if (shell_is_interactive)
@@ -243,6 +300,5 @@ int main(unused int argc, unused char* argv[]) {
     /* Clean up memory */
     tokens_destroy(tokens);
   }
-
   return 0;
 }
