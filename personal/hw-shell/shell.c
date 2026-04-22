@@ -16,6 +16,26 @@
 /* Convenience macro to silence compiler warnings about unused function parameters. */
 #define unused __attribute__((unused))
 
+/* Max number of tracked processes/jobs. */
+#define MAX_PROCS 256
+
+typedef enum process_state {
+  PROC_FOREGROUND,
+  PROC_BACKGROUND,
+  PROC_STOPPED,
+} process_state_t;
+
+typedef struct process_info {
+  pid_t pid;
+  pid_t pgid;
+  process_state_t state;
+  struct termios tmodes;
+  bool active;
+} process_info_t;
+
+process_info_t process_table[MAX_PROCS];
+int process_count = 0;
+
 /* Whether the shell is connected to an actual terminal or not. */
 bool shell_is_interactive;
 
@@ -32,6 +52,12 @@ int cmd_exit(struct tokens* tokens);
 int cmd_help(struct tokens* tokens);
 int cmd_pwd(struct tokens* tokens);
 int cmd_cd(struct tokens* tokens);
+int cmd_wait(struct tokens* tokens);
+int cmd_fg(struct tokens* tokens);
+int cmd_bg(struct tokens* tokens);
+bool is_background(struct tokens* tokens);
+bool is_pipe(struct tokens* tokens);
+int execute_pipe(struct tokens* tokens);
 
 /* Built-in command functions take token array (see parse.h) and return int */
 typedef int cmd_fun_t(struct tokens* tokens);
@@ -48,7 +74,149 @@ fun_desc_t cmd_table[] = {    //register the command
     {cmd_exit, "exit", "exit the command shell"},
     {cmd_pwd, "pwd"," prints the current working directory to standard output"},
     {cmd_cd, "cd", "changes the current working directory to that directory"},
+    {cmd_wait,"wait","wait for all background processes to finish"},
+    {cmd_fg, "fg", "move process to foreground and resume it"},
+    {cmd_bg, "bg", "resume a paused background process"},
 };
+
+int add_process(pid_t pid, pid_t pgid, process_state_t state) { // add a process to the process table, return the index of the process in the table, or -1 if the table is full
+  if (process_count >= MAX_PROCS) {
+    fprintf(stderr, "process table full\n");
+    return -1;
+  }
+
+  process_table[process_count].pid = pid;
+  process_table[process_count].pgid = pgid;
+  process_table[process_count].state = state;
+  process_table[process_count].active = true;
+  process_table[process_count].tmodes = shell_tmodes;
+  process_count++;
+  return process_count - 1;
+}
+/* Remove the process at the given index from the process table, shifting later processes forward. */
+void remove_process_at(int idx) {
+  if (idx < 0 || idx >= process_count) {
+    return;
+  }
+
+  for (int i = idx; i < process_count - 1; i++) { // shift the later processes forward to fill the gap
+    process_table[i] = process_table[i + 1];
+  }
+  process_count--;
+}
+
+/* Find the index of the process with the given pid in the process table, or -1 if not found. */
+int find_process_by_pid(pid_t pid) {
+  for (int i = process_count - 1; i >= 0; i--) {
+    if (process_table[i].active && process_table[i].pid == pid) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/* Find the index of the most recently added active process in the process table, or -1 if no active processes. */
+int find_most_recent_process() {
+  for (int i = process_count - 1; i >= 0; i--) {
+    if (process_table[i].active) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/* Parses an optional PID argument from the given tokens. If a valid PID is found, it is stored in *pid_out and the function returns 1. If no PID argument is provided, the function returns 0. If an invalid PID argument is provided, an error message is printed and the function returns -1. */
+int parse_optional_pid(struct tokens* tokens, pid_t* pid_out) {
+  if (tokens_get_length(tokens) < 2) {
+    return 0;
+  }
+
+  char* arg = tokens_get_token(tokens, 1);
+  char* endptr = NULL;
+  long value = strtol(arg, &endptr, 10);
+  if (arg == endptr || *endptr != '\0' || value <= 0) {
+    fprintf(stderr, "invalid pid: %s\n", arg);
+    return -1;
+  }
+
+  *pid_out = (pid_t)value;
+  return 1;
+}
+
+/* Reaps any finished child processes, updating the process table accordingly. Should be called whenever the shell regains control after spawning child processes, or when receiving SIGCHLD. */
+void reap_children() {
+  int status;
+  pid_t pid;
+
+  while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED | WCONTINUED)) > 0) {
+    int idx = find_process_by_pid(pid);
+    if (idx < 0) {
+      continue;
+    }
+
+    if (WIFEXITED(status) || WIFSIGNALED(status)) {
+      remove_process_at(idx);
+    } else if (WIFSTOPPED(status)) {
+      process_table[idx].state = PROC_STOPPED;
+      if (shell_is_interactive) {
+        tcgetattr(shell_terminal, &process_table[idx].tmodes);
+      }
+    } else if (WIFCONTINUED(status)) {
+      if (process_table[idx].state == PROC_STOPPED) {
+        process_table[idx].state = PROC_BACKGROUND;
+      }
+    }
+  }
+}
+
+/* Moves the process at the given index into the foreground, and optionally sends it a SIGCONT signal to resume it if it was stopped. Waits for the process to finish or stop again, and updates the process table accordingly. */
+void put_process_in_foreground(int idx, bool should_continue) {
+  int status;
+  pid_t wpid;
+
+  process_table[idx].state = PROC_FOREGROUND;
+
+  if (shell_is_interactive) {
+    tcsetpgrp(shell_terminal, process_table[idx].pgid);
+    tcsetattr(shell_terminal, TCSADRAIN, &process_table[idx].tmodes);
+  }
+
+  if (should_continue) {
+    if (kill(-process_table[idx].pgid, SIGCONT) == -1) {
+      perror("fg SIGCONT failed");
+    }
+  }
+
+  do {
+    wpid = waitpid(process_table[idx].pid, &status, WUNTRACED);
+  } while (wpid == -1 && errno == EINTR);
+
+  if (shell_is_interactive) {
+    tcsetpgrp(shell_terminal, shell_pgid);
+    tcgetattr(shell_terminal, &process_table[idx].tmodes);
+    tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
+  }
+
+  if (wpid == -1) {
+    perror("waitpid failed");
+    return;
+  }
+
+  if (WIFSTOPPED(status)) {
+    process_table[idx].state = PROC_STOPPED;
+  } else {
+    remove_process_at(idx);
+  }
+}
+
+void put_process_in_background(int idx, bool should_continue) {
+  process_table[idx].state = PROC_BACKGROUND;
+  if (should_continue) {
+    if (kill(-process_table[idx].pgid, SIGCONT) == -1) {
+      perror("bg SIGCONT failed");
+    }
+  }
+}
 
 /* Prints a helpful description for the given command */
 int cmd_help(unused struct tokens* tokens) {
@@ -127,12 +295,88 @@ void init_shell() {
   signal(SIGTTOU,SIG_IGN); //ignore the background write/tcsetpgrp signal
   signal(SIGTTIN,SIG_IGN); //ignore the background read signal
 }
+/*wait for all background processes to finish*/
+int cmd_wait(unused struct tokens* tokens){
+  int status;
+  pid_t wpid;
+
+  for (int i = 0; i < process_count;) {
+    if (process_table[i].state != PROC_BACKGROUND) {
+      i++;
+      continue;
+    }
+
+    do {
+      wpid = waitpid(process_table[i].pid, &status, 0);
+    } while (wpid == -1 && errno == EINTR);
+
+    if (wpid == -1) {
+      perror("waitpid error");
+      return -1;
+    }
+
+    remove_process_at(i);
+  }
+
+  return 0;
+}
+
+int cmd_fg(struct tokens* tokens) {
+  pid_t target_pid;
+  int parse_result = parse_optional_pid(tokens, &target_pid);
+  if (parse_result < 0) {
+    return -1;
+  }
+
+  reap_children();
+
+  int idx = (parse_result == 1) ? find_process_by_pid(target_pid) : find_most_recent_process();
+  if (idx < 0) {
+    fprintf(stderr, "fg: no such process\n");
+    return -1;
+  }
+
+  bool should_continue = (process_table[idx].state == PROC_STOPPED);
+  put_process_in_foreground(idx, should_continue);
+  return 0;
+}
+
+int cmd_bg(struct tokens* tokens) {
+  pid_t target_pid;
+  int parse_result = parse_optional_pid(tokens, &target_pid);
+  if (parse_result < 0) {
+    return -1;
+  }
+
+  reap_children();
+
+  int idx = (parse_result == 1) ? find_process_by_pid(target_pid) : find_most_recent_process();
+  if (idx < 0) {
+    fprintf(stderr, "bg: no such process\n");
+    return -1;
+  }
+
+  if (process_table[idx].state != PROC_STOPPED) {
+    fprintf(stderr, "bg: process is not stopped\n");
+    return -1;
+  }
+
+  put_process_in_background(idx, true);
+  return 0;
+}
 
 /*program execution*/
 int execute_program(struct tokens* tokens){
   int n = tokens_get_length(tokens);
   if(n == 0){
     return -1;
+  }
+  bool background = is_background(tokens);
+  if(background){
+    n -= 1;
+    if(n == 0){
+      return -1;
+    }
   }
   bool InRedirection =false;
   bool OutRedirection = false;
@@ -185,7 +429,6 @@ int execute_program(struct tokens* tokens){
     }
     free(path_copy);
   }
-  //run the program in the child thread
   if(found){
       if(InRedirection){ // in redirection
         int fd = open(redirection_file_in,O_RDONLY);
@@ -208,6 +451,14 @@ int execute_program(struct tokens* tokens){
     }
   free(argv);
   return 0;
+}
+/*Whether there're some bg processes*/
+bool is_background(struct tokens* tokens){
+  int n = tokens_get_length(tokens);
+  if(n>0 && strcmp(tokens_get_token(tokens,n-1),"&") == 0){
+    return true;
+  }
+  return false;
 }
 
 //whether use pipe
@@ -236,7 +487,11 @@ int execute_pipe(struct tokens* tokens){
   
   // fork loop
   pid_t c_pid, first_child_pgid = -1;
-  for(int i =0;i<num_procs;i++){
+  int actual_n = num_procs;
+  if(is_background(tokens)){ // if it's a background process, we need to remove the "&" token and decrease the actual number of processes by 1
+    actual_n = num_procs -1; // ignore the "&" token
+  }
+  for(int i =0;i<actual_n;i++){
      c_pid = fork();
     // set the pgid of the child process to itself, so that they can be in the same process
     if(c_pid == 0){
@@ -295,7 +550,7 @@ int execute_pipe(struct tokens* tokens){
   }
   
   //close the FDs in the parent process
-  for(int i =0;i<num_procs-1;i++){
+  for(int i =0;i<actual_n-1;i++){
     close(pipe_arr[i][0]);
     close(pipe_arr[i][1]);
   }
@@ -329,8 +584,11 @@ int main(unused int argc, unused char* argv[]) {
     fprintf(stdout, "%d: ", line_num);
 
   while (fgets(line, 4096, stdin)) {
+    reap_children();
+
     /* Split our line into words. */
     struct tokens* tokens = tokenize(line);
+    bool background = is_background(tokens);
 
     /* Find which built-in function to run. */
     int fundex = lookup(tokens_get_token(tokens, 0));
@@ -362,23 +620,21 @@ int main(unused int argc, unused char* argv[]) {
         if(setpgid(c_pid, c_pid) == -1) {
           perror("parent setpgid failed");
         }
-        if(shell_is_interactive) {
+        int proc_idx = add_process(c_pid, c_pid, background ? PROC_BACKGROUND : PROC_FOREGROUND);
+        if (proc_idx < 0) {
+          // Best effort cleanup for untracked children.
+          kill(c_pid, SIGTERM);
+          continue;
+        }
+        if(background){
+          // background job: return prompt immediately
+        } else if(shell_is_interactive) {
           if(tcsetpgrp(0, c_pid) == -1) {
             perror("tcsetpgrp to child failed");
           }
         }
-        int status;
-        pid_t wait_result;
-        do {
-          wait_result = waitpid(c_pid, &status, WUNTRACED);
-        } while (wait_result == -1 && errno == EINTR);
-        if (wait_result == -1) {
-          perror("waitpid failed");
-        }
-        if(shell_is_interactive) {
-          if(tcsetpgrp(0, shell_pgid) == -1) {
-            perror("tcsetpgrp to shell failed");
-          }
+        if(!background){
+          put_process_in_foreground(proc_idx, false);
         }
       }else {
         perror("fork error");
