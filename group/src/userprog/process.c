@@ -53,17 +53,21 @@ void userprog_init(void) {
 pid_t process_execute(const char* file_name) {
   char* fn_copy;
   tid_t tid;
-
   sema_init(&temporary, 0);
+  char name[128];
+  char* save_str;
+
+  strlcpy(name, file_name, sizeof(name));
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page(0);
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy(fn_copy, file_name, PGSIZE);
+  char* thread_name = strtok_r(name, " ", &save_str); // Use the first token as the thread name
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create(file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create(thread_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page(fn_copy);
   return tid;
@@ -76,6 +80,13 @@ static void start_process(void* file_name_) {
   struct thread* t = thread_current();
   struct intr_frame if_;
   bool success, pcb_success;
+  /*Phrase the file_name*/
+  char* token, *save_ptr;
+  int argc =0;
+  char *temp_argv[256];
+  for(token = strtok_r(file_name, " " , &save_ptr);token != NULL;token =strtok_r(NULL, " ",&save_ptr)){
+    temp_argv[argc++] = token;
+  }
 
   /* Allocate process control block */
   struct process* new_pcb = malloc(sizeof(struct process));
@@ -99,8 +110,45 @@ static void start_process(void* file_name_) {
     if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
     if_.cs = SEL_UCSEG;
     if_.eflags = FLAG_IF | FLAG_MBS;
-    success = load(file_name, &if_.eip, &if_.esp);
-  }
+    success = load(temp_argv[0],&if_.eip, &if_.esp);
+      /* Push arguments onto the stack in reverse order */
+    if(success){
+      char* arg_address[256];
+      for(int i=argc-1;i>=0;i--){
+        int len = strlen(temp_argv[i])+1;
+        if_.esp -=len;
+        memcpy(if_.esp,temp_argv[i],len);
+        arg_address[i] = if_.esp;
+      }
+
+      /* Word align the stack pointer */
+      int padding = (uintptr_t)if_.esp % 4;
+      if(padding!=0){
+        if_.esp -=padding;
+        memset(if_.esp,0,padding);
+      }
+
+      /* Push null pointer sentinel */
+      if_.esp -=sizeof(char*);
+      *((char **)if_.esp) = NULL;
+
+      for(int i =argc -1;i>=0;i--){
+        if_.esp -=sizeof(char *);
+        *((char**)if_.esp) = arg_address[i];
+      }
+      
+      /* Push argv (char**), argc (int), and fake return address (void*) */
+      char **argv_start = (char**)if_.esp;
+      if_.esp -=sizeof(char**);
+      *((char***)if_.esp) = argv_start;
+
+      if_.esp -= sizeof(int);
+      *((int*)if_.esp) = argc;
+
+      if_.esp -= sizeof(void*);
+      *((void **)if_.esp) = NULL;
+      }
+    }
 
   /* Handle failure with succesful PCB malloc. Must free the PCB */
   if (!success && pcb_success) {
