@@ -117,6 +117,7 @@ static void start_process(void* file_name_) {
       for(int i=argc-1;i>=0;i--){
         int len = strlen(temp_argv[i])+1;
         if_.esp -=len;
+        //save the address of the argument on the stack for later use when we push argv
         memcpy(if_.esp,temp_argv[i],len);
         arg_address[i] = if_.esp;
       }

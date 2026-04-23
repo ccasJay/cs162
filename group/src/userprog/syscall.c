@@ -4,6 +4,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "userprog/process.h"
+#include "threads/vaddr.h"
 
 static void syscall_handler(struct intr_frame*);
 
@@ -20,6 +21,17 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
    */
 
   /* printf("System call number: %d\n", args[0]); */
+  if(f->esp == NULL || !is_user_vaddr(f->esp)){
+      f->eax = -1;
+      printf("%s: exit(-1)\n", thread_current()->pcb->process_name);
+      process_exit();
+    }
+  if(args[0] ==SYS_PRACTICE){
+    f->eax = args[1];
+    f->eax+=1;
+    return;
+  }
+
 
   if (args[0] == SYS_EXIT) {
     f->eax = args[1];
