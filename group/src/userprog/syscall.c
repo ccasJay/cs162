@@ -6,6 +6,8 @@
 #include "userprog/process.h"
 #include "threads/vaddr.h"
 #include "devices/shutdown.h"
+#include "userprog/pagedir.h"
+#include "threads/palloc.h"
 
 static void syscall_handler(struct intr_frame*);
 
@@ -57,5 +59,20 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       sema_up(&cur_pcb->my_status->wait_sema);
     }
     process_exit();
+  }
+
+  //exec
+  if(args[0] == SYS_EXEC){
+    check_address((void*)(args+1));
+    char *u_cmdline = (char *) args[1];// the command line from user program
+    check_address(u_cmdline);
+    char *cmdline_cp = palloc_get_page(0);// a copy of the command line
+    if(cmdline_cp == NULL){
+      f->eax = TID_ERROR;
+      return;
+    }
+    strlcpy(cmdline_cp,u_cmdline,PGSIZE);
+    f->eax = process_execute(cmdline_cp);
+    palloc_free_page(cmdline_cp);
   }
 }

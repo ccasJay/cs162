@@ -52,31 +52,85 @@ void userprog_init(void) {
    process id, or TID_ERROR if the thread cannot be created. */
 pid_t process_execute(const char* file_name) {
   char* fn_copy;
+  fn_copy = palloc_get_page(0);
+  if (fn_copy == NULL)
+    return TID_ERROR;
+
+  //the shared status
+  struct exec_status* status = malloc(sizeof(*status));
+  if (status == NULL) {
+    palloc_free_page(fn_copy);
+    return TID_ERROR;
+  }
+
+  //init the shared status
+  status->load_success = false;
+  sema_init(&status->load_sema, 0);
+
+  //aux struct to pass multiple arguments to start_process()
+  struct exec_aux* aux = malloc(sizeof(*aux));
+  if (aux == NULL) {
+    palloc_free_page(fn_copy);
+    free(status);
+    return TID_ERROR;
+  }
+
   tid_t tid;
   sema_init(&temporary, 0);
   char name[128];
   char* save_str;
 
   strlcpy(name, file_name, sizeof(name));
-  /* Make a copy of FILE_NAME.
-     Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page(0);
-  if (fn_copy == NULL)
+
+  //the children status list
+  struct child_status* cs = malloc(sizeof(*cs));
+  if(cs == NULL){
+    palloc_free_page(fn_copy);
     return TID_ERROR;
+  } 
+  cs->exit_status=-2;
+  cs->is_waited_on=false;
+  sema_init(&cs->wait_sema,0);
+
+  //init the aux struct
+  aux->cmdline = fn_copy;
+  aux->load_status = status;
+  aux->child_status = cs;
+  list_push_back(&thread_current()->pcb->children,&cs->elem);
+
+  /**
+   * Make a copy of the file name. Otherwise, there's
+   * a race between  the caller and load(),
+   */
   strlcpy(fn_copy, file_name, PGSIZE);
   char* thread_name = strtok_r(name, " ", &save_str); // Use the first token as the thread name
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create(thread_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
+  
+  tid = thread_create(thread_name, PRI_DEFAULT, start_process, aux);
+  if (tid == TID_ERROR) {
     palloc_free_page(fn_copy);
+    free(aux);
+    free(status);
+    return TID_ERROR;
+  }
+  cs->pid = tid;
+
+  sema_down(&status->load_sema);
+  if (!status->load_success)
+    tid = TID_ERROR;
+  free(status);
   return tid;
 }
 
 /* A thread function that loads a user process and starts it
-   running. */
+   running. */ 
 static void start_process(void* file_name_) {
-  char* file_name = (char*)file_name_;
+  struct exec_aux* aux = (struct exec_aux*)file_name_;
+  struct child_status* cs = aux->child_status;
+
+  char* file_name = aux->cmdline;
+  struct exec_status* status = aux->load_status;
   struct thread* t = thread_current();
   struct intr_frame if_;
   bool success, pcb_success;
@@ -98,6 +152,7 @@ static void start_process(void* file_name_) {
     // does not try to activate our uninitialized pagedir
     new_pcb->pagedir = NULL;
     t->pcb = new_pcb;
+    t->pcb->my_status= cs;
 
     // Continue initializing the PCB as normal
     t->pcb->main_thread = t;
@@ -151,6 +206,10 @@ static void start_process(void* file_name_) {
       }
     }
 
+  status->load_success = success;
+  sema_up(&status->load_sema);
+  free(aux);
+
   /* Handle failure with succesful PCB malloc. Must free the PCB */
   if (!success && pcb_success) {
     // Avoid race where PCB is freed before t->pcb is set to NULL
@@ -176,7 +235,7 @@ static void start_process(void* file_name_) {
      and jump to it. */
   asm volatile("movl %0, %%esp; jmp intr_exit" : : "g"(&if_) : "memory");
   NOT_REACHED();
-}
+  }
 
 /* Waits for process with PID child_pid to die and returns its exit status.
    If it was terminated by the kernel (i.e. killed due to an

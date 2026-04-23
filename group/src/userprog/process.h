@@ -32,15 +32,28 @@ struct process {
   struct child_status *my_status;
 };
 
+/*The shared status*/
+struct exec_status{
+   bool load_success;
+   struct semaphore load_sema;
+};
+
+/* Auxiliary struct to pass multiple arguments to start_process() when
+   starting a new process. */
+struct exec_aux{
+   char* cmdline;
+   struct exec_status *load_status;
+   struct child_status *child_status;
+};
+
 /* The status of a child process. */
 struct child_status{
    pid_t pid; 
    int exit_status;
-
    bool is_waited_on; // Whether the parent has called process_wait on this child yet
-
    struct semaphore wait_sema;// Semaphore to block parent until child exits
-}
+   struct list_elem elem;
+};
 
 void userprog_init(void);
 
