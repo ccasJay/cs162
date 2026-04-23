@@ -27,7 +27,20 @@ struct process {
   uint32_t* pagedir;          /* Page directory. */
   char process_name[16];      /* Name of the main thread */
   struct thread* main_thread; /* Pointer to main thread */
+
+  struct list children;
+  struct child_status *my_status;
 };
+
+/* The status of a child process. */
+struct child_status{
+   pid_t pid; 
+   int exit_status;
+
+   bool is_waited_on; // Whether the parent has called process_wait on this child yet
+
+   struct semaphore wait_sema;// Semaphore to block parent until child exits
+}
 
 void userprog_init(void);
 
