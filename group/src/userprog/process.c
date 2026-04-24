@@ -51,59 +51,54 @@ void userprog_init(void) {
    before process_execute() returns.  Returns the new process's
    process id, or TID_ERROR if the thread cannot be created. */
 pid_t process_execute(const char* file_name) {
+  /*make a copy of file_name*/
   char* fn_copy;
   fn_copy = palloc_get_page(0);
   if (fn_copy == NULL)
     return TID_ERROR;
+  strlcpy(fn_copy, file_name, PGSIZE);
 
-  //the shared status
+  /*create the shared status and init*/
   struct exec_status* status = malloc(sizeof(*status));
   if (status == NULL) {
     palloc_free_page(fn_copy);
     return TID_ERROR;
   }
-
-  //init the shared status
   status->load_success = false;
   sema_init(&status->load_sema, 0);
 
-  //aux struct to pass multiple arguments to start_process()
+
+  tid_t tid;
+  sema_init(&temporary, 0);
+
+  /*Create a copy of filename to use the first token as the thread name*/
+  char name[128];
+  char* save_str;
+  strlcpy(name, file_name, sizeof(name));
+  char* thread_name = strtok_r(name, " ", &save_str);
+
+  /*Create the struct of child_status*/
+  struct child_status* cs = malloc(sizeof(*cs));
+  if(cs == NULL){
+    palloc_free_page(fn_copy);
+    return TID_ERROR;
+  } 
+  cs->exit_status=-2; //initialize to -2 to indicate the child is still running, since valid exit status is only 0-255
+  cs->is_waited_on=false;
+  sema_init(&cs->wait_sema,0);
+
+  /*create the aux struct to package the multiplu arguments to start_process()*/
   struct exec_aux* aux = malloc(sizeof(*aux));
   if (aux == NULL) {
     palloc_free_page(fn_copy);
     free(status);
     return TID_ERROR;
   }
-
-  tid_t tid;
-  sema_init(&temporary, 0);
-  char name[128];
-  char* save_str;
-
-  strlcpy(name, file_name, sizeof(name));
-
-  //the children status list
-  struct child_status* cs = malloc(sizeof(*cs));
-  if(cs == NULL){
-    palloc_free_page(fn_copy);
-    return TID_ERROR;
-  } 
-  cs->exit_status=-2;
-  cs->is_waited_on=false;
-  sema_init(&cs->wait_sema,0);
-
-  //init the aux struct
   aux->cmdline = fn_copy;
   aux->load_status = status;
   aux->child_status = cs;
   list_push_back(&thread_current()->pcb->children,&cs->elem);
 
-  /**
-   * Make a copy of the file name. Otherwise, there's
-   * a race between  the caller and load(),
-   */
-  strlcpy(fn_copy, file_name, PGSIZE);
-  char* thread_name = strtok_r(name, " ", &save_str); // Use the first token as the thread name
 
   /* Create a new thread to execute FILE_NAME. */
   
@@ -116,7 +111,7 @@ pid_t process_execute(const char* file_name) {
   }
   cs->pid = tid;
 
-  sema_down(&status->load_sema);
+  sema_down(&status->load_sema);//father is block there until the child process load the ELF and give the loading result through the shared status struct
   if (!status->load_success)
     tid = TID_ERROR;
   free(status);
@@ -126,15 +121,17 @@ pid_t process_execute(const char* file_name) {
 /* A thread function that loads a user process and starts it
    running. */ 
 static void start_process(void* file_name_) {
+  //phrase the aux struct and extract the arguments
   struct exec_aux* aux = (struct exec_aux*)file_name_;
   struct child_status* cs = aux->child_status;
-
+  
   char* file_name = aux->cmdline;
   struct exec_status* status = aux->load_status;
+
   struct thread* t = thread_current();
   struct intr_frame if_;
   bool success, pcb_success;
-  /*Phrase the file_name*/
+  /*Phrase the file_name into a temp arr*/
   char* token, *save_ptr;
   int argc =0;
   char *temp_argv[256];
@@ -148,8 +145,7 @@ static void start_process(void* file_name_) {
 
   /* Initialize process control block */
   if (success) {
-    // Ensure that timer_interrupt() -> schedule() -> process_activate()
-    // does not try to activate our uninitialized pagedir
+    // Ensure that timer_interrupt() -> schedule() -> process_activate() // does not try to activate our uninitialized pagedir
     new_pcb->pagedir = NULL;
     t->pcb = new_pcb;
     t->pcb->my_status= cs;
@@ -165,8 +161,8 @@ static void start_process(void* file_name_) {
     if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
     if_.cs = SEL_UCSEG;
     if_.eflags = FLAG_IF | FLAG_MBS;
-    success = load(temp_argv[0],&if_.eip, &if_.esp);
-      /* Push arguments onto the stack in reverse order */
+    success = load(temp_argv[0],&if_.eip, &if_.esp); //change the `success` into the load check
+      /* if load successed, Push arguments onto the stack in reverse order */
     if(success){
       char* arg_address[256];
       for(int i=argc-1;i>=0;i--){

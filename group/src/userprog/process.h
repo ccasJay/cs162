@@ -32,21 +32,34 @@ struct process {
   struct child_status *my_status;
 };
 
-/*The shared status*/
+/**
+ * the shared status between father and children
+ * - load_success: whether the children load the ELF successfully
+ * - load_sema: used to sync the parent and child during exec
+ */
 struct exec_status{
    bool load_success;
    struct semaphore load_sema;
 };
 
-/* Auxiliary struct to pass multiple arguments to start_process() when
-   starting a new process. */
+/**
+ * The aux struct used to pass multiple arguments to start_process() when
+ * creating a new process. 
+ * - cmdline: the command line to execute
+ * - load_status: package the shared status between parent and child during exec
+ * - child_status: package the shared child process running/exit status between parent and child processes
+ * 
+ */
 struct exec_aux{
    char* cmdline;
    struct exec_status *load_status;
    struct child_status *child_status;
 };
 
-/* The status of a child process. */
+/**
+ * the struct to keep track of the children status in the parent process
+ * 
+ */
 struct child_status{
    pid_t pid; 
    int exit_status;
