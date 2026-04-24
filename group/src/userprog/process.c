@@ -233,6 +233,20 @@ static void start_process(void* file_name_) {
   NOT_REACHED();
   }
 
+/**
+ * (Helper)Find the child process in the children list by child_pid
+ */
+struct child_status* find_child_by_pid(struct list* children, pid_t target_pid){
+  struct list_elem *e;
+  for(e = list_begin(children); e!= list_end(children) ;e = list_next(e)){
+    struct child_status *cs = list_entry(e,struct child_status,elem);
+    if(cs->pid == target_pid){
+      return cs;
+    }
+  }
+  return NULL;
+}
+
 /* Waits for process with PID child_pid to die and returns its exit status.
    If it was terminated by the kernel (i.e. killed due to an
    exception), returns -1.  If child_pid is invalid or if it was not a
@@ -242,9 +256,24 @@ static void start_process(void* file_name_) {
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
-int process_wait(pid_t child_pid UNUSED) {
-  sema_down(&temporary);
-  return 0;
+int process_wait(pid_t child_pid ) {
+  /*get the current thread's pcb*/
+  struct thread* cur = thread_current();
+  if(cur->pcb == NULL){
+    return -1;
+  }
+
+  /*check whether the child_pid is exist*/
+  struct child_status *cs = find_child_by_pid(&cur->pcb->children, child_pid);
+  if(cs == NULL)return -1;
+  if(cs->is_waited_on) return -1;
+
+  cs->is_waited_on = true;
+  sema_down(&cs->wait_sema);
+  list_remove(&cs->elem);
+  int exit_status = cs->exit_status;
+  free(cs);
+  return exit_status;  
 }
 
 /* Free the current process's resources. */
@@ -258,10 +287,18 @@ void process_exit(void) {
     NOT_REACHED();
   }
 
+  /*the current process's child_status*/
+  struct child_status* cs = cur->pcb->my_status;
+  if (cs != NULL) {
+    if (cs->exit_status == -2)
+      cs->exit_status = -1;
+    sema_up(&cs->wait_sema);
+  }
+
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
-  pd = cur->pcb->pagedir;
-  if (pd != NULL) {
+  pd = cur->pcb->pagedir; if (pd != NULL) {
     /* Correct ordering here is crucial.  We must set
          cur->pcb->pagedir to NULL before switching page directories,
          so that a timer interrupt can't switch back to the
@@ -282,7 +319,7 @@ void process_exit(void) {
   cur->pcb = NULL;
   free(pcb_to_free);
 
-  sema_up(&temporary);
+  sema_up(&cs->wait_sema);
   thread_exit();
 }
 

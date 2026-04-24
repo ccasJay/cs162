@@ -55,8 +55,6 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
     if(cur_pcb->my_status!= NULL ){
       cur_pcb->my_status->exit_status = f->eax;
-
-      sema_up(&cur_pcb->my_status->wait_sema);
     }
     process_exit();
   }
@@ -74,5 +72,14 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     strlcpy(cmdline_cp,u_cmdline,PGSIZE);
     f->eax = process_execute(cmdline_cp);
     palloc_free_page(cmdline_cp);
+    return;
   }
+
+  //wait
+  if(args[0] == SYS_WAIT){
+    check_address((void*)(args+1));
+    f->eax = process_wait(args[1]);
+    return;
+  }
+
 }
