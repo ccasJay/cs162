@@ -222,3 +222,24 @@ static void invalidate_pagedir(uint32_t* pd) {
     pagedir_activate(pd);
   }
 }
+
+/**
+ * (Helper)Whether the pagedir is wirtable
+ * - PDE : page directory entry
+ * - PT : page table
+ * - PTE : page table entry
+ */
+
+bool pagedir_is_writable(uint32_t* pd, void* upage) {
+  uint32_t* pte;
+
+  ASSERT(pg_ofs(upage)==0);
+  ASSERT(is_user_vaddr(upage));
+
+  pte = lookup_page(pd,upage,false);
+  if (pte == NULL || (*pte & PTE_P) == 0)
+    return false;
+
+  return (*pte & PTE_W) != 0;
+}
+ 

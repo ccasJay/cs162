@@ -22,9 +22,12 @@
 
 static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
+static thread_func start_fork;
 static thread_func start_pthread NO_RETURN;
 static bool load(const char* file_name, void (**eip)(void), void** esp);
+static uint32_t* copy_pagedir(uint32_t* old_pd, uint32_t* new_pd);
 bool setup_thread(void (**eip)(void), void** esp);
+static bool copy_fds(struct process* parent, struct process* child);
 
 /* Initializes user programs in the system by ensuring the main
    thread has a minimal PCB so that it can execute and wait for
@@ -46,9 +49,256 @@ void userprog_init(void) {
   ASSERT(success);
 }
 
+/**
+ * Fork: creates a copy of the calling process, including its file descriptors
+ * and address space.
+ * The calling process is the parent process, and the new process is the child
+ * process.
+ *
+ * - In the parent process, returns the new process's PID.
+ *   The new PID must be unique. If the program cannot load or run for any
+ *   reason, returns -1.
+ *
+ * - In the child process, returns 0.
+ *
+ * - The child process is considered a direct child of the calling process
+ *   (for wait()).
+ *
+ * - The child process gets a copy of the parent's file descriptors, which
+ *   reference the same underlying struct file. STDIN and STDOUT do not need
+ *   special handling here.
+ */
+pid_t process_fork(struct intr_frame* parent_if){
+  /*Create the shared status*/
+  struct fork_status* fork_status = malloc(sizeof(*fork_status));
+  if(fork_status == NULL){
+    return -1;
+  }
+  fork_status->fork_success = false;
+  sema_init(&fork_status->fork_sema,0);
+
+  /*Create the struct of child_status*/
+  struct child_status* cs = malloc(sizeof(*cs));
+  if(cs == NULL)return -1;
+  cs->exit_status= -2;
+  cs->is_waited_on = false;
+  sema_init(&cs->wait_sema,0);
+
+  /*The current thread who call the fork*/
+  struct thread* t = thread_current();
+  tid_t tid;
+
+  /*Create the aux passed in the start_fork()*/
+  struct fork_aux* aux = malloc(sizeof(*aux));
+  if(aux == NULL){
+    free(fork_status);
+    return -1;
+  }
+  aux->child_status = cs;
+  aux->fs = fork_status;
+  aux->parent = t;
+  aux->pf = *parent_if;
+  list_push_back(&t->pcb->children,&cs->elem);
+
+  /*Create a new thread*/
+  tid = thread_create(t->name, PRI_DEFAULT, start_fork,aux);
+  if(tid == TID_ERROR){
+    free(fork_status);
+    free(cs);
+    free(aux);
+    return -1;
+  }
+  cs->pid = tid;
+  sema_down(&fork_status->fork_sema);
+  if(!fork_status->fork_success){
+    tid = -1;
+  }
+  free(fork_status);
+  return tid;
+}
+
+static void start_fork(void* aux_passedin){
+  /*Phrase the aux passed in*/
+  struct fork_aux* aux = (struct fork_aux*)aux_passedin;
+  struct child_status* cs = aux->child_status;
+
+  struct fork_status* fork_status = aux->fs;
+  struct thread* parent_t = aux->parent; 
+  struct thread* current_t = thread_current();
+  struct intr_frame if_ = aux->pf;
+  bool success;
+  
+  /*Allocate process control block*/
+  struct process* new_pcb = malloc(sizeof(struct process));
+  success  = new_pcb != NULL;
+
+  /*Initialize process control block*/
+  if(success){
+    new_pcb->pagedir = NULL;
+    current_t->pcb = new_pcb;
+
+    new_pcb->my_status=cs;
+    new_pcb->main_thread = current_t;
+    strlcpy(new_pcb->process_name, parent_t->name,sizeof(parent_t->name));
+    list_init(&new_pcb->children);
+    
+    new_pcb->pagedir = pagedir_create();
+    success = new_pcb->pagedir != NULL;
+    if(success){
+      success = copy_pagedir(parent_t->pcb->pagedir,new_pcb->pagedir) != NULL;
+    }
+    if(success){
+      success = copy_fds(parent_t->pcb,new_pcb);
+    }
+  }
+  if (success) {
+    thread_current()->pcb = new_pcb;
+  }
+
+  if(!success){
+    fork_status->fork_success = false;
+    sema_up(&fork_status->fork_sema);
+    free(aux);
+    if(new_pcb != NULL && new_pcb->pagedir != NULL){
+      pagedir_destroy(new_pcb->pagedir);
+    }
+    process_exit();
+  }
+  fork_status->fork_success = success;  
+  if_.eax = 0;
+  sema_up(&fork_status->fork_sema);
+  free(aux);
+  asm volatile("movl %0, %%esp; jmp intr_exit" : : "g"(&if_) : "memory");
+  NOT_REACHED();
+}
+/**
+ * (Helper)Copy one of a file's fd entry
+ */
+static struct fd_entry* fd_entry_copy(struct fd_entry* src){
+  struct fd_entry* dst = malloc(sizeof(*dst));
+  if(dst == NULL)
+  return NULL;
+
+  dst->fd = src->fd;
+  dst->file = file_reopen(src->file);
+  if(dst->file == NULL){
+    free(dst);
+    return NULL;
+  }
+  return dst;
+}
+
+/**
+ * (Helper)Copy a file's entire fd
+ * - parent : parent process
+ * - child : child process
+ */
+static bool copy_fds(struct process* parent, struct process* child){
+  struct list_elem* e;
+
+  list_init(&child->fds);
+  child->next_fd = parent->next_fd;
+
+  for(e=list_begin(&parent->fds);e != list_end(&parent->fds); e= list_next(e)){
+    struct fd_entry* src = list_entry(e,struct fd_entry,elem);
+    if(src->fd<2)continue;
+
+    struct fd_entry* dst = fd_entry_copy(src);
+    if(dst == NULL){
+      return false;
+    }
+    list_push_back(&child->fds,&dst->elem);
+  }
+  return true;
+}
+
+/**
+ * Assigns a new file descriptor for the given file in the current process
+ * and returns the fd. Returns -1 if memory allocation fails.
+ */
+int process_alloc_fd(struct file* f) {
+  struct thread* t = thread_current();
+  struct fd_entry* entry = malloc(sizeof(*entry));
+  if(entry == NULL){
+    return -1;
+  }
+
+  entry->fd = t->pcb->next_fd++;
+  entry->file = f;
+  list_push_back(&t->pcb->fds,&entry->elem);
+  return entry->fd;
+
+}
+
+/**
+ * Looks up the file associated with a file descriptor in the current process.
+ * Returns the struct file*, or NULL if not found.
+ */
+struct file* process_get_file(int fd) {
+  struct thread* t = thread_current();
+  struct list_elem* e;
+
+  for(e = list_begin(&t->pcb->fds);e != list_end(&t->pcb->fds);e = list_next(e)){
+    struct fd_entry* entry = list_entry(e,struct fd_entry,elem);
+    if(entry->fd ==fd){
+      return entry->file;
+    }
+  }
+  return NULL;
+}
+
+/**
+ * Closes the file associated with a file descriptor in the current process,
+ * and removes its entry.
+ */
+void process_close_fd(int fd) {
+  struct thread* t = thread_current();
+  struct list_elem* e;
+
+  for(e = list_begin(&t->pcb->fds);e != list_end(&t->pcb->fds);e = list_next(e)){
+    struct fd_entry* entry =list_entry(e,struct fd_entry,elem);
+    if(entry->fd == fd){
+      file_close(entry->file);
+      list_remove(&entry->elem);
+      free(entry);
+      return;
+    }
+  }
+}
+
+/**(Helper)Copy a pagedir
+ * - use pagedir_create() to create the new pagedir
+ * - use pagedir_get_page() and pagedir_set_page() to copy each page table entry,and map the vm to the pm
+ * - if any step fails, free the new pagedir and return NULL
+ */
+static uint32_t* copy_pagedir(uint32_t* old_pd,uint32_t* new_pd){
+  ASSERT(old_pd!=NULL);
+  ASSERT(new_pd!=NULL);
+  for (void* upage = 0; upage<(void*)PHYS_BASE;upage += PGSIZE){
+    void *parent_kpage = pagedir_get_page(old_pd,upage);
+    if(parent_kpage==NULL){
+      continue;
+    }
+    void* child_kpage = palloc_get_page(PAL_USER);
+    if(child_kpage == NULL){
+      pagedir_destroy(new_pd);
+      return NULL;
+    } 
+    bool writable = pagedir_is_writable(old_pd,upage);
+
+    memcpy(child_kpage,parent_kpage,PGSIZE);
+    if(!pagedir_set_page(new_pd,upage,child_kpage,writable)){
+      palloc_free_page(child_kpage);
+      pagedir_destroy(new_pd);
+      return NULL;
+    }
+  }
+  return new_pd;
+}
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
-   before process_execute() returns.  Returns the new process's
+   before process_execute() returns.Returns the new process's
    process id, or TID_ERROR if the thread cannot be created. */
 pid_t process_execute(const char* file_name) {
   /*make a copy of file_name*/

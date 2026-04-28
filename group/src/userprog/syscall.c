@@ -82,4 +82,87 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     return;
   }
 
+  //fork
+  if(args[0] == SYS_FORK){
+    check_address((void*)(args+1));
+    pid_t pid = args[1];
+    
+    f->eax = process_fork(f);
+    return;
+  }
+
+  /* File System system calls */
+
+  // create
+  if (args[0] == SYS_CREATE) {
+    check_address((void*)(args + 1));
+    check_address((void*)(args + 2));
+    /* TODO: check_address for args[1] string if needed */
+    /* f->eax = filesys_create(args[1], args[2]); */
+    return;
+  }
+
+  // remove
+  if (args[0] == SYS_REMOVE) {
+    check_address((void*)(args + 1));
+    /* TODO: check_address for args[1] string if needed */
+    /* f->eax = filesys_remove(args[1]); */
+    return;
+  }
+
+  // open
+  if (args[0] == SYS_OPEN) {
+    check_address((void*)(args + 1));
+    /* TODO: check_address for args[1] string */
+    /* struct file *f = filesys_open(args[1]); ... process_alloc_fd() */
+    return;
+  }
+
+  // filesize
+  if (args[0] == SYS_FILESIZE) {
+    check_address((void*)(args + 1));
+    /* TODO: process_get_file(), file_length() */
+    return;
+  }
+
+  // read
+  if (args[0] == SYS_READ) {
+    check_address((void*)(args + 1));
+    check_address((void*)(args + 2));
+    check_address((void*)(args + 3));
+    /* TODO: check buffer address. handle fd==0 and fd>1 */
+    return;
+  }
+
+  // write
+  if (args[0] == SYS_WRITE) {
+    check_address((void*)(args + 1));
+    check_address((void*)(args + 2));
+    check_address((void*)(args + 3));
+    /* TODO: check buffer address. handle fd==1 and fd>1 */
+    return;
+  }
+
+  // seek
+  if (args[0] == SYS_SEEK) {
+    check_address((void*)(args + 1));
+    check_address((void*)(args + 2));
+    /* TODO: process_get_file(), file_seek() */
+    return;
+  }
+
+  // tell
+  if (args[0] == SYS_TELL) {
+    check_address((void*)(args + 1));
+    /* TODO: process_get_file(), file_tell() */
+    return;
+  }
+
+  // close
+  if (args[0] == SYS_CLOSE) {
+    check_address((void*)(args + 1));
+    /* TODO: process_close_fd() */
+    return;
+  }
+
 }
