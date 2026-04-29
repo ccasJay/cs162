@@ -21,8 +21,7 @@
 #include "threads/vaddr.h"
 
 static struct semaphore temporary;
-static thread_func start_process NO_RETURN;
-static thread_func start_fork;
+static thread_func start_process NO_RETURN; static thread_func start_fork;
 static thread_func start_pthread NO_RETURN;
 static bool load(const char* file_name, void (**eip)(void), void** esp);
 static uint32_t* copy_pagedir(uint32_t* old_pd, uint32_t* new_pd);
@@ -109,7 +108,7 @@ pid_t process_fork(struct intr_frame* parent_if){
     return -1;
   }
   cs->pid = tid;
-  sema_down(&fork_status->fork_sema);
+  sema_down(&fork_status->fork_sema); // block until child finishes setting up its address space and fds
   if(!fork_status->fork_success){
     tid = -1;
   }
@@ -139,24 +138,29 @@ static void start_fork(void* aux_passedin){
 
     new_pcb->my_status=cs;
     new_pcb->main_thread = current_t;
+    /* Inherit the parent's thread name*/
     strlcpy(new_pcb->process_name, parent_t->name,sizeof(parent_t->name));
     list_init(&new_pcb->children);
     
     new_pcb->pagedir = pagedir_create();
     success = new_pcb->pagedir != NULL;
+    /* copy the parent process pagedir */
     if(success){
       success = copy_pagedir(parent_t->pcb->pagedir,new_pcb->pagedir) != NULL;
     }
+    /* copy the entire file descriptor table from parent's pcb */
     if(success){
       success = copy_fds(parent_t->pcb,new_pcb);
     }
   }
+  /* child pcb setup complete*/
   if (success) {
     thread_current()->pcb = new_pcb;
   }
 
   if(!success){
     fork_status->fork_success = false;
+    /* Wake up the parent semaphore to avoid deadlock. */
     sema_up(&fork_status->fork_sema);
     free(aux);
     if(new_pcb != NULL && new_pcb->pagedir != NULL){
@@ -164,7 +168,9 @@ static void start_fork(void* aux_passedin){
     }
     process_exit();
   }
+
   fork_status->fork_success = success;  
+  /* Set return value for child process: fork returns 0 in the child. */
   if_.eax = 0;
   sema_up(&fork_status->fork_sema);
   free(aux);
