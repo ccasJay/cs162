@@ -46,6 +46,11 @@ void userprog_init(void) {
 
   /* Kill the kernel if we did not succeed */
   ASSERT(success);
+
+  list_init(&t->pcb->children);
+  list_init(&t->pcb->fds);
+  t->pcb->next_fd = 2;
+  t->pcb->executable = NULL;
 }
 
 /**
@@ -138,6 +143,7 @@ static void start_fork(void* aux_passedin){
 
     new_pcb->my_status=cs;
     new_pcb->main_thread = current_t;
+    new_pcb->executable = NULL;
     /* Inherit the parent's thread name*/
     strlcpy(new_pcb->process_name, parent_t->name,sizeof(parent_t->name));
     list_init(&new_pcb->children);
@@ -409,6 +415,10 @@ static void start_process(void* file_name_) {
     // Continue initializing the PCB as normal
     t->pcb->main_thread = t;
     strlcpy(t->pcb->process_name, t->name, sizeof t->name);
+    list_init(&new_pcb->children);
+    list_init(&new_pcb->fds);
+    new_pcb->next_fd = 2;
+    new_pcb->executable = NULL;
   }
 
   /* Initialize interrupt frame and load executable. */
@@ -421,6 +431,10 @@ static void start_process(void* file_name_) {
       /* if load successed, Push arguments onto the stack in reverse order */
     if(success){
       char* arg_address[256];
+      /* 16-byte alignment (required for some tests and SSE) */
+      if ((uintptr_t)if_.esp % 16 != 0) {
+          if_.esp -= (uintptr_t)if_.esp % 16;
+      }
       for(int i=argc-1;i>=0;i--){
         int len = strlen(temp_argv[i])+1;
         if_.esp -=len;
@@ -429,8 +443,9 @@ static void start_process(void* file_name_) {
         arg_address[i] = if_.esp;
       }
 
-      /* Word align the stack pointer */
-      int padding = (uintptr_t)if_.esp % 4;
+      /* 16-byte align the stack pointer before the arguments are pushed */
+      uintptr_t target_before_ret = ((uintptr_t)if_.esp - (4 * argc + 12)) & ~0xF;
+      int padding = (uintptr_t)if_.esp - (target_before_ret + 4 * argc + 12);
       if(padding!=0){
         if_.esp -=padding;
         memset(if_.esp,0,padding);
@@ -551,6 +566,19 @@ void process_exit(void) {
     sema_up(&cs->wait_sema);
   }
 
+  /* Close the executable file if it's still open */
+  if (cur->pcb->executable != NULL) {
+    file_close(cur->pcb->executable);
+    cur->pcb->executable = NULL;
+  }
+
+  /* Close all open file descriptors */
+  while (!list_empty(&cur->pcb->fds)) {
+    struct list_elem *e = list_pop_front(&cur->pcb->fds);
+    struct fd_entry *entry = list_entry(e, struct fd_entry, elem);
+    file_close(entry->file);
+    free(entry);
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -575,7 +603,6 @@ void process_exit(void) {
   cur->pcb = NULL;
   free(pcb_to_free);
 
-  sema_up(&cs->wait_sema);
   thread_exit();
 }
 
@@ -755,7 +782,13 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
 
 done:
   /* We arrive here whether the load is successful or not. */
-  file_close(file);
+  if (success) {
+    /* Keep the executable open and deny writes to prevent modification. */
+    t->pcb->executable = file;
+    file_deny_write(file);
+  } else {
+    file_close(file);
+  }
   return success;
 }
 

@@ -5,6 +5,7 @@
 #include "userprog/process.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "userprog/syscall.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -74,18 +75,25 @@ static void kill(struct intr_frame* f) {
   switch (f->cs) {
     case SEL_UCSEG:
       /* User's code segment, so it's a user exception, as we
-         expected.  Kill the user process.  */
-      printf("%s: dying due to interrupt %#04x (%s).\n", thread_name(), f->vec_no,
-             intr_name(f->vec_no));
-      intr_dump_frame(f);
+         expected.  Kill the user process with exit(-1). */
+      if(thread_current()->pcb != NULL && thread_current()->pcb->my_status != NULL)
+        thread_current()->pcb->my_status->exit_status = -1;
+      printf("%s: exit(-1)\n", thread_name());
       process_exit();
       NOT_REACHED();
 
     case SEL_KCSEG:
       /* Kernel's code segment, which indicates a kernel bug.
-         Kernel code shouldn't throw exceptions.  (Page faults
-         may cause kernel exceptions--but they shouldn't arrive
-         here.)  Panic the kernel to make the point.  */
+         However, if the current thread is a user process (has a pagedir),
+         the fault may have been caused by a bad user pointer passed to a
+         syscall. In that case, terminate the process with exit(-1). */
+      if(thread_current()->pcb != NULL && thread_current()->pcb->pagedir != NULL){
+        if(thread_current()->pcb->my_status != NULL)
+          thread_current()->pcb->my_status->exit_status = -1;
+        printf("%s: exit(-1)\n", thread_name());
+        process_exit();
+        NOT_REACHED();
+      }
       intr_dump_frame(f);
       PANIC("Kernel bug - unexpected interrupt in kernel");
 

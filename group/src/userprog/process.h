@@ -34,6 +34,8 @@ struct process {
   
   struct list fds; 
   int next_fd;
+  
+  struct file* executable;    /* The executable file, kept open for deny_write */
 };
 
 
