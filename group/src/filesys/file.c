@@ -8,6 +8,7 @@ struct file {
   struct inode* inode; /* File's inode. */
   off_t pos;           /* Current position. */
   bool deny_write;     /* Has file_deny_write() been called? */
+  int dupCount;        /* Number of times this file is duplicated. */
 };
 
 /* Opens a file for the given INODE, of which it takes ownership,
@@ -19,6 +20,7 @@ struct file* file_open(struct inode* inode) {
     file->inode = inode;
     file->pos = 0;
     file->deny_write = false;
+    file->dupCount = 1;
     return file;
   } else {
     inode_close(inode);
@@ -33,9 +35,18 @@ struct file* file_reopen(struct file* file) {
   return file_open(inode_reopen(file->inode));
 }
 
+/* Duplicates FILE, incrementing its duplication count. */
+struct file* file_duplicate(struct file* file) {
+  if (file != NULL) {
+    file->dupCount++;
+  }
+  return file;
+}
+
 /* Closes FILE. */
 void file_close(struct file* file) {
   if (file != NULL) {
+    if (--file->dupCount > 0) return;
     file_allow_write(file);
     inode_close(file->inode);
     free(file);

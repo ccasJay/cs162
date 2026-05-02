@@ -283,3 +283,4 @@ cscope.po.out
 
 ### PintOS ###
 pintos/**/build
+node_modules/
