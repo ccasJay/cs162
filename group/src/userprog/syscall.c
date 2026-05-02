@@ -51,7 +51,12 @@ static void check_address(const void *vaddr){
 }
 
 
-void syscall_init(void) { intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall"); }
+struct lock filesys_lock;
+
+void syscall_init(void) { 
+  intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall"); 
+  lock_init(&filesys_lock);
+}
 
 /* Function prototypes for file system-related syscalls */
 static bool create (const char *file, unsigned initial_size);
@@ -221,7 +226,9 @@ static bool create (const char *file, unsigned initial_size){
     return false;
   }
   strlcpy(kfile, file, PGSIZE);
+  lock_acquire(&filesys_lock);
   bool success = filesys_create(kfile, (off_t) initial_size);
+  lock_release(&filesys_lock);
   palloc_free_page(kfile);
   return success;
 }
@@ -238,7 +245,9 @@ static bool remove (const char *file){
     return false;
   }
   strlcpy(kfile,file,PGSIZE);
+  lock_acquire(&filesys_lock);
   bool success = filesys_remove(kfile);
+  lock_release(&filesys_lock);
   palloc_free_page(kfile);
   return success;
 }
@@ -255,7 +264,9 @@ static int open (const char *file){
   }
   strlcpy(kfile,file,PGSIZE);
 
+  lock_acquire(&filesys_lock);
   struct file *f = filesys_open(kfile);
+  lock_release(&filesys_lock);
   palloc_free_page(kfile);
 
   if(f == NULL){
@@ -265,7 +276,9 @@ static int open (const char *file){
   int fd = process_alloc_fd(f);
   
   if(fd == -1){
+    lock_acquire(&filesys_lock);
     file_close(f);
+    lock_release(&filesys_lock);
     return -1;
   }
   return fd;
@@ -278,7 +291,10 @@ static int open (const char *file){
 static int filesize (int fd){
   struct file* file = process_get_file(fd);
   if(file == NULL)return -1;
-  return file_length(file);
+  lock_acquire(&filesys_lock);
+  int length = file_length(file);
+  lock_release(&filesys_lock);
+  return length;
 }
 
 /**
@@ -314,17 +330,18 @@ static int filesize (int fd){
   while(totla_read < (off_t)size){
     off_t to_read = size - totla_read;
     if(to_read >PGSIZE)to_read = PGSIZE;
-    off_t n = file_read(f, kbuf,to_read);
-    if(n<=0) break;
+      lock_acquire(&filesys_lock);
+      off_t n = file_read(f, kbuf,to_read);
+      lock_release(&filesys_lock);
+      if(n<=0) break;
 
-    memcpy(buffer + totla_read,kbuf,n);
-    totla_read +=n;
-    if(n<to_read) break;
-
+      memcpy(buffer + totla_read,kbuf,n);
+      totla_read +=n;
+      if(n<to_read) break;
   }
   palloc_free_page(kbuf);
   return totla_read;
- }
+}
 
  /**
   * Writes size bytes from buffer to the open file with file descriptor fd. Returns the number of 
@@ -361,7 +378,9 @@ static int filesize (int fd){
 
     memcpy(kbuf,buffer+total_written,to_write);
 
+    lock_acquire(&filesys_lock);
     off_t n = file_write(f,kbuf,to_write);
+    lock_release(&filesys_lock);
     if(n<=0) break;
 
     total_written += n;
@@ -381,7 +400,10 @@ static int filesize (int fd){
   if (fd == 0 || fd == 1 )return ;
   struct file* f = process_get_file(fd);
   if(f == NULL)return ;
-  return file_seek(f,position);
+  lock_acquire(&filesys_lock);
+  file_seek(f,position);
+  lock_release(&filesys_lock);
+  return;
  }
 
  /**
@@ -395,14 +417,16 @@ static int filesize (int fd){
   struct file* f = process_get_file(fd);
   if(f == NULL)return -1;
 
-  return file_tell(f);
+  lock_acquire(&filesys_lock);
+  int pos = file_tell(f);
+  lock_release(&filesys_lock);
+  return pos;
  }
 
  /**
   * Closes file descriptor fd. Exiting or terminating a process must implicitly close all its open 
   * file descriptors, as if by calling this function for each one. If the operation is 
-  * unsuccessful, 
-  * it can either exit with -1 or it can just fail silently.
+  * unsuccessful, it can either exit with -1 or it can just fail silently.
   */
 
   static int close (int fd){
@@ -419,7 +443,9 @@ static int filesize (int fd){
     }
     if(entry == NULL) return -1;
     
+    lock_acquire(&filesys_lock);
     file_close(entry->file);
+    lock_release(&filesys_lock);
     list_remove(&entry->elem);
     free(entry);
     return 0;

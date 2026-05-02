@@ -1,3 +1,4 @@
+#include "userprog/syscall.h"
 #include "userprog/process.h"
 #include <debug.h>
 #include <inttypes.h>
@@ -192,7 +193,9 @@ static struct fd_entry* fd_entry_copy(struct fd_entry* src){
   return NULL;
 
   dst->fd = src->fd;
-  dst->file = file_reopen(src->file);
+  lock_acquire(&filesys_lock);
+  dst->file = file_duplicate(src->file);
+  lock_release(&filesys_lock);
   if(dst->file == NULL){
     free(dst);
     return NULL;
@@ -270,7 +273,9 @@ void process_close_fd(int fd) {
   for(e = list_begin(&t->pcb->fds);e != list_end(&t->pcb->fds);e = list_next(e)){
     struct fd_entry* entry =list_entry(e,struct fd_entry,elem);
     if(entry->fd == fd){
+      lock_acquire(&filesys_lock);
       file_close(entry->file);
+      lock_release(&filesys_lock);
       list_remove(&entry->elem);
       free(entry);
       return;
@@ -568,7 +573,9 @@ void process_exit(void) {
 
   /* Close the executable file if it's still open */
   if (cur->pcb->executable != NULL) {
+    lock_acquire(&filesys_lock);
     file_close(cur->pcb->executable);
+    lock_release(&filesys_lock);
     cur->pcb->executable = NULL;
   }
 
@@ -576,7 +583,9 @@ void process_exit(void) {
   while (!list_empty(&cur->pcb->fds)) {
     struct list_elem *e = list_pop_front(&cur->pcb->fds);
     struct fd_entry *entry = list_entry(e, struct fd_entry, elem);
+    lock_acquire(&filesys_lock);
     file_close(entry->file);
+    lock_release(&filesys_lock);
     free(entry);
   }
 
@@ -707,8 +716,10 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
   process_activate();
 
   /* Open executable file. */
+  lock_acquire(&filesys_lock);
   file = filesys_open(file_name);
   if (file == NULL) {
+    lock_release(&filesys_lock);
     printf("load: %s: open failed\n", file_name);
     goto done;
   }
@@ -787,7 +798,13 @@ done:
     t->pcb->executable = file;
     file_deny_write(file);
   } else {
-    file_close(file);
+    if (file != NULL) {
+      file_close(file);
+    }
+  }
+  
+  if (file != NULL) {
+    lock_release(&filesys_lock);
   }
   return success;
 }
