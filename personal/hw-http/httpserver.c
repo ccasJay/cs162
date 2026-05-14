@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <bits/posix1_lim.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -39,11 +40,25 @@ void serve_file(int fd, char* path) {
 
   /* TODO: PART 2 */
   /* PART 2 BEGIN */
+  int file_fd  = open(path,O_RDONLY);
+  struct stat st;
+  stat(path,&st);
+
+  char size_str[20];
+  sprintf(size_str,"%ld",st.st_size);
+
 
   http_start_response(fd, 200);
   http_send_header(fd, "Content-Type", http_get_mime_type(path));
-  http_send_header(fd, "Content-Length", "0"); // TODO: change this line too
+  http_send_header(fd, "Content-Length",size_str); // TODO: change this line too
   http_end_headers(fd);
+
+  char buf[4096];
+  ssize_t n;
+  while( n = read(file_fd,buf,sizeof(buf))>0){
+    write(fd,buf,n);
+  }
+  close(file_fd);
 
   /* PART 2 END */
 }
@@ -117,6 +132,7 @@ void handle_files_request(int fd) {
    */
 
   /* PART 2 & 3 BEGIN */
+
 
   /* PART 2 & 3 END */
 
