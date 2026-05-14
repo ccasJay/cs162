@@ -55,7 +55,7 @@ void serve_file(int fd, char* path) {
 
   char buf[4096];
   ssize_t n;
-  while( n = read(file_fd,buf,sizeof(buf))>0){
+  while( (n = read(file_fd,buf,sizeof(buf)))>0){
     write(fd,buf,n);
   }
   close(file_fd);
@@ -132,9 +132,17 @@ void handle_files_request(int fd) {
    */
 
   /* PART 2 & 3 BEGIN */
+  struct stat st;
 
-
+  if(stat(path,&st)==0){
+    serve_file(fd,path);
+  }else{
+    http_start_response(fd,404);
+    http_send_header(fd,"Content-Type", "text/html");
+    http_end_headers(fd);
+  }
   /* PART 2 & 3 END */
+
 
   close(fd);
   return;
