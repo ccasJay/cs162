@@ -31,6 +31,28 @@ int server_port; // Default value: 8000
 char* server_files_directory;
 char* server_proxy_hostname;
 int server_proxy_port;
+/*(Helper) Send error response*/
+
+void send_error_response(int fd,int status_code){
+  http_start_response(fd,status_code);
+  http_send_header(fd,"Content-Type","text/html");
+  http_end_headers(fd);
+}
+
+/*(Helper) Send response headers with files*/
+void send_response_headers(int fd,char* path,int status_code,char* size_str){
+  http_start_response(fd, status_code);
+  http_send_header(fd, "Content-Type", http_get_mime_type(path));
+  http_send_header(fd,"Content-Length",size_str);
+  http_end_headers(fd);
+}
+
+/*(Helper) Get the index path*/
+char* get_index_path(char* path){
+  char* index_path = malloc(strlen(path) + strlen("/index.html") + 1);
+  sprintf(index_path,"%s/index.html",path);
+  return index_path;
+}
 
 /*
  * Serves the contents the file stored at `path` to the client socket `fd`.
@@ -47,17 +69,14 @@ void serve_file(int fd, char* path) {
   char size_str[20];
   sprintf(size_str,"%ld",st.st_size);
 
-
-  http_start_response(fd, 200);
-  http_send_header(fd, "Content-Type", http_get_mime_type(path));
-  http_send_header(fd, "Content-Length",size_str); // TODO: change this line too
-  http_end_headers(fd);
+  send_response_headers(fd, path, 200,size_str);
 
   char buf[4096];
   ssize_t n;
   while( (n = read(file_fd,buf,sizeof(buf)))>0){
     write(fd,buf,n);
   }
+
   close(file_fd);
 
   /* PART 2 END */
@@ -72,13 +91,64 @@ void serve_directory(int fd, char* path) {
   /* PART 3 BEGIN */
 
   // TODO: Open the directory (Hint: opendir() may be useful here)
-
+  DIR* dir = opendir(path);
+  if(dir==NULL){
+    fprintf(stderr,"Cannot open directory %s\n",path);
+    return;
+  }
   /**
    * TODO: For each entry in the directory (Hint: look at the usage of readdir() ),
    * send a string containing a properly formatted HTML. (Hint: the http_format_href()
    * function in libhttp.c may be useful here)
    */
+   /* 整理url格式，去掉开头的 ./ */
+  char* url_path;
+  if(strcmp(path, "./") == 0){
+    url_path = "";
+  }else{
+    url_path = path + 3;
+  }
 
+  char clean_path[4096];
+  strcpy(clean_path,url_path);
+  int len = strlen(clean_path);
+  if(len > 0 && clean_path[len -1] == '/'){
+    clean_path[len -1] = '\0';
+  }
+  printf("clean path: %s\n",clean_path);
+
+
+  struct dirent* entry;
+  char buf[4096];
+
+  /*send parent dir link*/
+  char parent[4096];
+  strcpy(parent,clean_path);
+  char* last_slash = strrchr(parent,'/');
+  if(strcmp(clean_path,"" )== 0){ // the path is already the root directory
+    strcpy(parent,"");
+  }else{
+    if(last_slash != NULL){
+      *last_slash = '\0';
+    }else{
+      strcpy(parent,"");
+    }
+  }
+  http_format_href(buf,parent,"..");
+  write(fd, buf, strlen(buf));
+  write(fd, "\n", 1);
+
+  while((entry = readdir(dir))!=NULL){
+    if(strcmp(entry->d_name,".")==0 || strcmp(entry->d_name,"..")==0){
+      continue;
+    }
+    char* filename = entry->d_name;
+
+    http_format_href(buf,clean_path,filename);
+    write(fd, buf, strlen(buf));
+    write(fd,"\n",1);
+  }
+  closedir(dir);
   /* PART 3 END */
 }
 
@@ -100,17 +170,13 @@ void handle_files_request(int fd) {
   struct http_request* request = http_request_parse(fd);
 
   if (request == NULL || request->path[0] != '/') {
-    http_start_response(fd, 400);
-    http_send_header(fd, "Content-Type", "text/html");
-    http_end_headers(fd);
+    send_error_response(fd, 400);
     close(fd);
     return;
   }
 
   if (strstr(request->path, "..") != NULL) {
-    http_start_response(fd, 403);
-    http_send_header(fd, "Content-Type", "text/html");
-    http_end_headers(fd);
+    send_error_response(fd, 403);
     close(fd);
     return;
   }
@@ -135,11 +201,21 @@ void handle_files_request(int fd) {
   struct stat st;
 
   if(stat(path,&st)==0){
-    serve_file(fd,path);
+    if(S_ISREG(st.st_mode)){
+      serve_file(fd,path);
+    }else if(S_ISDIR(st.st_mode)){
+      /*access the 'index.html' first if it's existed*/
+      char* index_path = get_index_path(path);
+      struct stat index_st;
+      if(stat(index_path, &index_st)==0 && S_ISREG(index_st.st_mode)){
+        serve_file(fd,index_path);
+      }else{
+        serve_directory(fd,path);
+      }
+      free(index_path);
+    }
   }else{
-    http_start_response(fd,404);
-    http_send_header(fd,"Content-Type", "text/html");
-    http_end_headers(fd);
+    send_error_response(fd, 404);
   }
   /* PART 2 & 3 END */
 
