@@ -54,6 +54,7 @@ char* get_index_path(char* path){
   return index_path;
 }
 
+
 /*
  * Serves the contents the file stored at `path` to the client socket `fd`.
  * It is the caller's reponsibility to ensure that the file stored at `path` exists.
@@ -152,6 +153,22 @@ void serve_directory(int fd, char* path) {
   /* PART 3 END */
 }
 
+/*(Helper) relay the data stream between the sockets*/
+static void relay_stream(int src_fd,int dst_fd){
+  char buf[4096];
+  ssize_t n ;
+  while((n = read(src_fd,buf,sizeof(buf)))>0){
+    ssize_t total = 0;
+    while(total<n){
+      ssize_t m = write(dst_fd, buf+total, n-total);
+      if(m <= 0){
+        return;
+      }
+      total +=m;
+    }
+  }
+}
+
 /*
  * Reads an HTTP request from client socket (fd), and writes an HTTP response
  * containing:
@@ -237,6 +254,24 @@ void handle_files_request(int fd) {
  *
  *   Closes client socket (fd) and proxy target fd (target_fd) when finished.
  */
+
+struct proxy_args{
+  int src_fd;
+  int dst_fd;
+};
+void* proxy_data(void* arg){
+  struct proxy_args* args = (struct proxy_args*)arg;
+  int fd = args->src_fd;
+  int target_fd = args->dst_fd;
+  free(args);
+
+  relay_stream(fd, target_fd);
+  shutdown(fd, SHUT_RDWR);
+  shutdown(target_fd,SHUT_RDWR);
+  return NULL;
+
+}
+
 void handle_proxy_request(int fd) {
 
   /*
@@ -266,7 +301,7 @@ void handle_proxy_request(int fd) {
     exit(ENXIO);
   }
 
-  char* dns_address = target_dns_entry->h_addr_list[0];
+  char* dns_address = target_dns_entry->h_addr_list[0]; // Take the first resolved IP address for the proxy target.
 
   // Connect to the proxy target.
   memcpy(&target_address.sin_addr, dns_address, sizeof(target_address.sin_addr));
@@ -280,14 +315,63 @@ void handle_proxy_request(int fd) {
     http_start_response(fd, 502);
     http_send_header(fd, "Content-Type", "text/html");
     http_end_headers(fd);
-    close(target_fd);
+
+    shutdown(fd, SHUT_RDWR);
+    shutdown(target_fd, SHUT_RDWR);
     close(fd);
+    close(target_fd);
     return;
   }
 
   /* TODO: PART 4 */
   /* PART 4 BEGIN */
+  pthread_t thread1,thread2;
+  struct proxy_args* a1 = malloc(sizeof(struct proxy_args)); // client to proxy target
+  struct proxy_args* a2 = malloc(sizeof(struct proxy_args)); // proxy target to client
+  if (a1 == NULL || a2 == NULL) {
+    free(a1);
+    free(a2);
+    shutdown(fd, SHUT_RDWR);
+    shutdown(target_fd, SHUT_RDWR);
+    close(fd);
+    close(target_fd);
+    return;
+  }
 
+  a1->src_fd = fd;
+  a1->dst_fd = target_fd;
+
+  a2->src_fd = target_fd;
+  a2->dst_fd = fd;
+
+  int thread1_status = pthread_create(&thread1, NULL, proxy_data, a1);
+  int thread2_status = pthread_create(&thread2, NULL, proxy_data, a2);
+
+  if (thread1_status != 0 || thread2_status != 0) {
+    if (thread1_status != 0) {
+      free(a1);
+    }
+    if (thread2_status != 0) {
+      free(a2);
+    }
+    shutdown(fd, SHUT_RDWR);
+    shutdown(target_fd, SHUT_RDWR);
+    if (thread1_status == 0) {
+      pthread_join(thread1, NULL);
+    }
+    if (thread2_status == 0) {
+      pthread_join(thread2, NULL);
+    }
+    close(fd);
+    close(target_fd);
+    return;
+  }
+
+  pthread_join(thread1,NULL);
+  pthread_join(thread2,NULL);
+
+  close(fd);
+  close(target_fd);
   /* PART 4 END */
 }
 
