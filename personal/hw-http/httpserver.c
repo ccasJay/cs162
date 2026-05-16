@@ -259,6 +259,8 @@ struct proxy_args{
   int src_fd;
   int dst_fd;
 };
+
+// 线程函数,不解析数据，只进行数据转发
 void* proxy_data(void* arg){
   struct proxy_args* args = (struct proxy_args*)arg;
   int fd = args->src_fd;
@@ -356,6 +358,7 @@ void handle_proxy_request(int fd) {
     }
     shutdown(fd, SHUT_RDWR);
     shutdown(target_fd, SHUT_RDWR);
+    // one of the thread is successfully created
     if (thread1_status == 0) {
       pthread_join(thread1, NULL);
     }
@@ -366,7 +369,7 @@ void handle_proxy_request(int fd) {
     close(target_fd);
     return;
   }
-
+  //all of the threads is successfully created
   pthread_join(thread1,NULL);
   pthread_join(thread2,NULL);
 
