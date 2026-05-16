@@ -409,6 +409,21 @@ void init_thread_pool(int num_threads, void (*request_handler)(int)) {
 }
 #endif
 
+struct thread_args {
+  int client_fd;
+  void (*request_handler)(int);
+};
+
+void* handle_thread_client(void* arg) {
+  struct thread_args* args = (struct thread_args*)arg;
+  int client_fd = args->client_fd;
+  void (*request_handler)(int) = args->request_handler;
+  free(args);
+
+  request_handler(client_fd);
+  return NULL;
+}
+
 /*
  * Opens a TCP stream socket on all interfaces with port number PORTNO. Saves
  * the fd number of the server socket in *socket_number. For each accepted
@@ -524,7 +539,25 @@ void serve_forever(int* socket_number, void (*request_handler)(int)) {
      */
 
     /* PART 6 BEGIN */
+    pthread_t child;
+    struct thread_args* args = malloc(sizeof(struct thread_args));
+    if(args == NULL){
+      perror("Failed to allocate memory for thread args");
+      close(client_socket_number);
+      continue;
+    }
 
+    args->client_fd = client_socket_number;
+    args->request_handler = request_handler;
+
+    if(pthread_create(&child,NULL,handle_thread_client,args) != 0){
+      perror("Failed to create thread");
+      free(args);
+      close(client_socket_number);
+      continue;
+    }
+     /* Detach the thread so that it will free its resources on completion. */
+     pthread_detach(child);
     /* PART 6 END */
 #elif POOLSERVER
     /*
