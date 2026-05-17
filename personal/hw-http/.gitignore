@@ -2,6 +2,16 @@ httpserver
 forkserver
 threadserver
 poolserver
+.cache/
+.clangd
+.vscode/
+compile_commands.json
+*.o
+*.out
+*.a
+*.so
+*.dylib
+*.exe
 *.html
 *.png
 *.jpg
