@@ -21,6 +21,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
+#define MAX_ARGS 256
 static struct semaphore temporary; //TO CLEAN?
 static thread_func start_process NO_RETURN; static thread_func start_fork;
 static thread_func start_pthread NO_RETURN;
@@ -401,7 +402,7 @@ static void start_process(void* file_name_) {
   /*Phrase the file_name into a temp arr*/
   char* token, *save_ptr;
   int argc =0;
-  char *temp_argv[256];
+  char *temp_argv[MAX_ARGS];
   for(token = strtok_r(file_name, " " , &save_ptr);token != NULL;token =strtok_r(NULL, " ",&save_ptr)){
     temp_argv[argc++] = token;
   }
@@ -435,7 +436,7 @@ static void start_process(void* file_name_) {
     success = load(temp_argv[0],&if_.eip, &if_.esp); //change the `success` into the load check
       /* if load successed, Push arguments onto the stack in reverse order */
     if(success){
-      char* arg_address[256];
+      char* arg_address[MAX_ARGS];
       /* 16-byte alignment (required for some tests and SSE) */
       if ((uintptr_t)if_.esp % 16 != 0) {
           if_.esp -= (uintptr_t)if_.esp % 16;
