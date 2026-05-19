@@ -2,8 +2,10 @@
 #include <debug.h>
 #include <stddef.h>
 #include <random.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "list.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -23,6 +25,8 @@
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list fifo_ready_list;
+static struct list prio_ready_list;
+
 
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
@@ -72,6 +76,8 @@ static struct thread* thread_schedule_fair(void);
 static struct thread* thread_schedule_mlfqs(void);
 static struct thread* thread_schedule_reserved(void);
 
+static bool compare_prio(const struct list_elem* a,const struct list_elem* b);
+
 /* Determines which scheduler the kernel should use.
    Controlled by the kernel command-line options
     "-sched=fifo", "-sched=prio",
@@ -108,6 +114,7 @@ void thread_init(void) {
 
   lock_init(&tid_lock);
   list_init(&fifo_ready_list);
+  list_init(&prio_ready_list);
   list_init(&all_list);
 
   /* Set up a thread structure for the running thread. */
@@ -233,8 +240,11 @@ void thread_block(void) {
 static void thread_enqueue(struct thread* t) {
   ASSERT(intr_get_level() == INTR_OFF);
   ASSERT(is_thread(t));
+  if(active_sched_policy == SCHED_PRIO){
+    list_insert_ordered(&prio_ready_list, &t->elem, compare_prio,NULL);
+  }
 
-  if (active_sched_policy == SCHED_FIFO)
+  else if (active_sched_policy == SCHED_FIFO)
     list_push_back(&fifo_ready_list, &t->elem);
   else
     PANIC("Unimplemented scheduling policy value: %d", active_sched_policy);
@@ -382,7 +392,7 @@ static void idle(void* idle_started_ UNUSED) {
          important; otherwise, an interrupt could be handled
          between re-enabling interrupts and waiting for the next
          one to occur, wasting as much as one clock tick worth of
-         time.
+         time. 
 
          See [IA32-v2a] "HLT", [IA32-v2b] "STI", and [IA32-v3a]
          7.11.1 "HLT Instruction". */
@@ -442,7 +452,7 @@ static void* alloc_frame(struct thread* t, size_t size) {
   /* Stack data is always allocated in word-size units. */
   ASSERT(is_thread(t));
   ASSERT(size % sizeof(uint32_t) == 0);
-
+  
   t->stack -= size;
   return t->stack;
 }
@@ -457,7 +467,10 @@ static struct thread* thread_schedule_fifo(void) {
 
 /* Strict priority scheduler */
 static struct thread* thread_schedule_prio(void) {
-  PANIC("Unimplemented scheduler policy: \"-sched=prio\"");
+  if(!list_empty(&prio_ready_list))
+    return list_entry(list_pop_front(&prio_ready_list), struct thread,elem);
+  else
+    return idle_thread;
 }
 
 /* Fair priority scheduler */
@@ -564,3 +577,11 @@ static tid_t allocate_tid(void) {
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof(struct thread, stack);
+
+/*(Helper) used for prio_ready_list */
+static bool compare_prio(const struct list_elem* a, const struct list_elem* b){
+  struct thread* ta = list_entry(a, struct thread, elem);
+  struct thread* tb = list_entry(b, struct thread, elem);
+
+  return ta->priority > tb->priority;
+}
