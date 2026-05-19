@@ -2,8 +2,10 @@
 #include <debug.h>
 #include <inttypes.h>
 #include <round.h>
+#include <stdint.h>
 #include <stdio.h>
 #include "devices/pit.h"
+#include "list.h"
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
@@ -77,10 +79,14 @@ int64_t timer_elapsed(int64_t then) { return timer_ticks() - then; }
    be turned on. */
 void timer_sleep(int64_t ticks) {
   int64_t start = timer_ticks();
+  struct thread* t = thread_current();
+  // the tick for thread waking
+  t->wake_tick = start + ticks;
+  //add the cur thread to sleep_list and let it blocked
+  list_push_front(&sleep_list, &t->elem);
+  thread_block();
 
   ASSERT(intr_get_level() == INTR_ON);
-  while (timer_elapsed(start) < ticks)
-    thread_yield();
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -128,6 +134,15 @@ void timer_print_stats(void) { printf("Timer: %" PRId64 " ticks\n", timer_ticks(
 /* Timer interrupt handler. */
 static void timer_interrupt(struct intr_frame* args UNUSED) {
   ticks++;
+  while(!list_empty(&sleep_list)){
+    struct list_elem* to_wake_elem = list_front(&sleep_list);
+    struct thread *t = list_entry(to_wake_elem, struct thread, elem);
+
+    if(t->wake_tick > ticks)break;
+
+    list_pop_front(&sleep_list);
+    thread_unblock(t);
+  }
   thread_tick();
 }
 
