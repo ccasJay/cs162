@@ -34,6 +34,8 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+static bool compare_semaphore_elem(const struct list_elem* a, const struct list_elem* b, void* aux UNUSED);
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -65,7 +67,7 @@ void sema_down(struct semaphore* sema) {
 
   old_level = intr_disable();
   while (sema->value == 0) {
-    list_insert_ordered(&sema->waiters, &thread_current()->elem, compare_prio,NULL) ;
+    list_insert_ordered(&sema->waiters, &thread_current()->elem, (list_less_func*) compare_prio, NULL);
     thread_block();
   }
   sema->value--;
@@ -353,8 +355,11 @@ void cond_signal(struct condition* cond, struct lock* lock UNUSED) {
   ASSERT(!intr_context());
   ASSERT(lock_held_by_current_thread(lock));
 
-  if (!list_empty(&cond->waiters))
-    sema_up(&list_entry(list_pop_front(&cond->waiters), struct semaphore_elem, elem)->semaphore);
+  if (!list_empty(&cond->waiters)) {
+    list_sort(&cond->waiters, compare_semaphore_elem, NULL);
+    struct semaphore_elem* waiter = list_entry(list_pop_front(&cond->waiters), struct semaphore_elem, elem);
+    sema_up(&waiter->semaphore);
+  }
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by
@@ -369,4 +374,16 @@ void cond_broadcast(struct condition* cond, struct lock* lock) {
 
   while (!list_empty(&cond->waiters))
     cond_signal(cond, lock);
+}
+
+
+/*(Helper) Compare the semaphore_elem used for list_insert_ordered()*/
+static bool compare_semaphore_elem(const struct list_elem* a, const struct list_elem* b, void* aux UNUSED) {
+  struct semaphore_elem* sa = list_entry(a, struct semaphore_elem, elem);
+  struct semaphore_elem* sb = list_entry(b, struct semaphore_elem, elem);
+  struct thread* ta = list_entry(list_front(&sa->semaphore.waiters), struct thread, elem);
+  struct thread* tb = list_entry(list_front(&sb->semaphore.waiters), struct thread, elem);
+
+  return ta->priority > tb->priority;
+
 }
