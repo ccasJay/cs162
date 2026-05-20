@@ -342,12 +342,15 @@ void thread_set_priority(int new_priority) {
   struct thread *cur = thread_current();
   cur->priority = new_priority;
 
+
+  if(!list_empty(&prio_ready_list) && active_sched_policy == SCHED_PRIO){
   //获取ready queue表头节点thread的优先级
   struct list_elem* e = list_front(&prio_ready_list);
   struct thread* header_ready_thread = list_entry(e, struct thread, elem);
-
-  if(!list_empty(&prio_ready_list) && active_sched_policy == SCHED_PRIO && header_ready_thread->priority > cur->priority)
-  thread_yield();
+  if(header_ready_thread->priority > cur->priority){
+    thread_yield();
+    }
+  }
 }
 
 /* Returns the current thread's priority. */
