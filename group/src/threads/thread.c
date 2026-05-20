@@ -76,7 +76,6 @@ static struct thread* thread_schedule_fair(void);
 static struct thread* thread_schedule_mlfqs(void);
 static struct thread* thread_schedule_reserved(void);
 
-static bool compare_prio(const struct list_elem* a,const struct list_elem* b);
 
 /* Determines which scheduler the kernel should use.
    Controlled by the kernel command-line options
@@ -592,7 +591,7 @@ static tid_t allocate_tid(void) {
 uint32_t thread_stack_ofs = offsetof(struct thread, stack);
 
 /*(Helper) used for prio_ready_list */
-static bool compare_prio(const struct list_elem* a, const struct list_elem* b){
+bool compare_prio(const struct list_elem* a, const struct list_elem* b){
   struct thread* ta = list_entry(a, struct thread, elem);
   struct thread* tb = list_entry(b, struct thread, elem);
 
