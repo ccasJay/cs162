@@ -338,7 +338,17 @@ void thread_foreach(thread_action_func* func, void* aux) {
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
-void thread_set_priority(int new_priority) { thread_current()->priority = new_priority; }
+void thread_set_priority(int new_priority) { 
+  struct thread *cur = thread_current();
+  cur->priority = new_priority;
+
+  //获取ready queue表头节点thread的优先级
+  struct list_elem* e = list_front(&prio_ready_list);
+  struct thread* header_ready_thread = list_entry(e, struct thread, elem);
+
+  if(!list_empty(&prio_ready_list) && active_sched_policy == SCHED_PRIO && header_ready_thread->priority > cur->priority)
+  thread_yield();
+}
 
 /* Returns the current thread's priority. */
 int thread_get_priority(void) { return thread_current()->priority; }
