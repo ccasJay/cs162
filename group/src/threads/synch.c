@@ -31,6 +31,7 @@
 #include <string.h>
 #include "list.h"
 #include "stdbool.h"
+#include "stddef.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
@@ -189,9 +190,22 @@ void lock_acquire(struct lock* lock) {
   ASSERT(lock != NULL);
   ASSERT(!intr_context());
   ASSERT(!lock_held_by_current_thread(lock));
-
+  struct thread* initial_t = thread_current();
+  initial_t->waiting_on_lock = lock;
+  struct thread* cur_t = initial_t;
+  struct thread* holder ;
+  while(cur_t->waiting_on_lock != NULL){
+    holder = cur_t->waiting_on_lock->holder;
+    if(holder == NULL)break;
+    if(cur_t->priority > holder->priority){
+      holder->priority = cur_t->priority; 
+    }
+    //update the cur_t to the thread that is holding the lock that cur_t is waiting on
+    cur_t = holder;
+  }
   sema_down(&lock->semaphore);
-  lock->holder = thread_current();
+  initial_t->waiting_on_lock = NULL;
+  lock->holder = initial_t;
 }
 
 /* Tries to acquires LOCK and returns true if successful or false

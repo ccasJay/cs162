@@ -27,7 +27,6 @@
 static struct list fifo_ready_list;
 static struct list prio_ready_list;
 
-
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
@@ -450,8 +449,10 @@ static void init_thread(struct thread* t, const char* name, int priority) {
   strlcpy(t->name, name, sizeof t->name);
   t->stack = (uint8_t*)t + PGSIZE;
   t->priority = priority;
+  t->base_priority = priority;
   t->pcb = NULL;
   t->magic = THREAD_MAGIC;
+  list_init(&t->donors);
 
   old_level = intr_disable();
   list_push_back(&all_list, &t->allelem);

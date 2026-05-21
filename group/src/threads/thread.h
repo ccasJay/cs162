@@ -87,11 +87,17 @@ struct thread {
   enum thread_status status; /* Thread state. */
   char name[16];             /* Name (for debugging purposes). */
   uint8_t* stack;            /* Saved stack pointer. */
-  int priority;              /* Priority. */
+  int priority;              /* Effective Priority. */
+  int base_priority;         /* Base Priority. */
   struct list_elem allelem;  /* List element for all threads list. */
 
   /* Shared between thread.c and synch.c. */
   struct list_elem elem; /* List element. */
+
+  /* The donor list*/
+  struct list donors;
+  struct list_elem donor_elem;
+  struct lock *waiting_on_lock;
 
 #ifdef USERPROG
   /* Owned by process.c. */
