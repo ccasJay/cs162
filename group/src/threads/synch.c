@@ -36,6 +36,7 @@
 #include "threads/thread.h"
 
 static bool compare_semaphore_elem(const struct list_elem* a, const struct list_elem* b, void* aux UNUSED);
+static bool donor_already_in(const struct list_elem* donor,const struct list* donor_list);
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -191,9 +192,15 @@ void lock_acquire(struct lock* lock) {
   ASSERT(!intr_context());
   ASSERT(!lock_held_by_current_thread(lock));
   struct thread* initial_t = thread_current();
-  initial_t->waiting_on_lock = lock;
   struct thread* cur_t = initial_t;
   struct thread* holder ;
+  if(lock->holder != NULL){
+    //目前导致阻塞的lock
+    initial_t->waiting_on_lock = lock;
+    if(!donor_already_in(&cur_t->donor_elem, &lock->holder->donors)){
+      list_push_back(&lock->holder->donors, &cur_t->donor_elem);
+    }
+  }
   while(cur_t->waiting_on_lock != NULL){
     holder = cur_t->waiting_on_lock->holder;
     if(holder == NULL)break;
@@ -400,4 +407,15 @@ static bool compare_semaphore_elem(const struct list_elem* a, const struct list_
 
   return ta->priority > tb->priority;
 
+}
+
+/*(Helper)Whether the donor is already in the donors list*/
+static bool donor_already_in(const struct list_elem* donor,const struct list* donor_list){
+  struct thread* t = list_entry(donor, struct thread, elem);
+  struct list_elem* e;
+  for(e = list_begin(donor_list);e != list_end(donor_list);e = list_next(e)){
+    struct thread* cur = list_entry(e, struct thread, elem);
+    if(cur == t)return true;
+  }
+  return false;
 }
