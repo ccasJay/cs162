@@ -196,7 +196,7 @@ void lock_acquire(struct lock* lock) {
   struct thread* holder ;
   if(lock->holder != NULL){
     //目前导致阻塞的lock
-    initial_t->waiting_on_lock = lock;
+    cur_t->waiting_on_lock = lock;
     if(!donor_already_in(&cur_t->donor_elem, &lock->holder->donors)){
       list_push_back(&lock->holder->donors, &cur_t->donor_elem);
     }
@@ -241,6 +241,25 @@ bool lock_try_acquire(struct lock* lock) {
 void lock_release(struct lock* lock) {
   ASSERT(lock != NULL);
   ASSERT(lock_held_by_current_thread(lock));
+  struct thread* cur_t = thread_current();
+  // 删除lock产生的donors
+  struct list* donors = &cur_t->donors;
+  struct list_elem* e;
+  int new_priority = cur_t->base_priority;
+  for(e = list_begin(donors);e != list_end(donors);){
+    struct list_elem* next = list_next(e);
+    struct thread* t = list_entry(e, struct thread, donor_elem);
+    if(t->waiting_on_lock == lock){
+      list_remove(&t->donor_elem);
+    }else{
+      //重新计算新的 priority
+      if(t->priority > new_priority){
+        new_priority = t->priority;
+      }
+    }
+    e = next;
+  }
+  cur_t->priority = new_priority;
 
   lock->holder = NULL;
   sema_up(&lock->semaphore);
@@ -411,10 +430,10 @@ static bool compare_semaphore_elem(const struct list_elem* a, const struct list_
 
 /*(Helper)Whether the donor is already in the donors list*/
 static bool donor_already_in(const struct list_elem* donor,const struct list* donor_list){
-  struct thread* t = list_entry(donor, struct thread, elem);
+  struct thread* t = list_entry(donor, struct thread, donor_elem);
   struct list_elem* e;
   for(e = list_begin(donor_list);e != list_end(donor_list);e = list_next(e)){
-    struct thread* cur = list_entry(e, struct thread, elem);
+    struct thread* cur = list_entry(e, struct thread, donor_elem);
     if(cur == t)return true;
   }
   return false;

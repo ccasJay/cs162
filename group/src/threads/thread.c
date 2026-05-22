@@ -214,6 +214,11 @@ tid_t thread_create(const char* name, int priority, thread_func* function, void*
   /* Add to run queue. */
   thread_unblock(t);
 
+  // If the newly created thread has higher priority than the current thread, yield the CPU to it.
+  if (thread_current()->priority < priority) {
+    thread_yield();
+  }
+
   return tid;
 }
 
