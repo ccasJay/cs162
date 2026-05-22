@@ -341,9 +341,10 @@ void thread_foreach(thread_action_func* func, void* aux) {
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
-void thread_set_priority(int new_priority) { 
+void thread_set_priority(int new_priority) {
   struct thread *cur = thread_current();
-  cur->priority = new_priority;
+  // update the base_priority instead of effective priority because the effective priority is determined by the base_priority and the donors
+  cur->base_priority = new_priority;
 
 
   if(!list_empty(&prio_ready_list) && active_sched_policy == SCHED_PRIO){
