@@ -29,8 +29,14 @@
 #include "threads/synch.h"
 #include <stdio.h>
 #include <string.h>
+#include "list.h"
+#include "stdbool.h"
+#include "stddef.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+
+static bool compare_semaphore_elem(const struct list_elem* a, const struct list_elem* b, void* aux UNUSED);
+static bool donor_already_in(const struct list_elem* donor,const struct list* donor_list);
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -63,7 +69,7 @@ void sema_down(struct semaphore* sema) {
 
   old_level = intr_disable();
   while (sema->value == 0) {
-    list_push_back(&sema->waiters, &thread_current()->elem);
+    list_insert_ordered(&sema->waiters, &thread_current()->elem, (list_less_func*) compare_prio, NULL);
     thread_block();
   }
   sema->value--;
@@ -98,14 +104,28 @@ bool sema_try_down(struct semaphore* sema) {
    This function may be called from an interrupt handler. */
 void sema_up(struct semaphore* sema) {
   enum intr_level old_level;
+  //定义一个bool用来检测是否需要yield 因为不能在临街区这中yield, 此处的=临界区伴随着关中断
+  bool should_yield = false;
 
   ASSERT(sema != NULL);
 
   old_level = intr_disable();
-  if (!list_empty(&sema->waiters))
-    thread_unblock(list_entry(list_pop_front(&sema->waiters), struct thread, elem));
+  if (!list_empty(&sema->waiters)){
+    //低优先级收到donation后在waiters list 中的位置变化了，需要重新排序，否则影响sema_up
+    list_sort(&sema->waiters, (list_less_func*)compare_prio, NULL);
+    struct thread* t = list_entry(list_pop_front(&sema->waiters), struct thread, elem);
+    thread_unblock(t);
+    if(t->priority > thread_current()->priority){
+     should_yield  = true;
+    }
+  }
   sema->value++;
   intr_set_level(old_level);
+  if(should_yield){
+    if(intr_context()){
+      intr_yield_on_return();
+    }else thread_yield();
+  }
 }
 
 static void sema_test_helper(void* sema_);
@@ -173,9 +193,28 @@ void lock_acquire(struct lock* lock) {
   ASSERT(lock != NULL);
   ASSERT(!intr_context());
   ASSERT(!lock_held_by_current_thread(lock));
-
+  struct thread* initial_t = thread_current();
+  struct thread* cur_t = initial_t;
+  struct thread* holder ;
+  if(lock->holder != NULL){
+    //目前导致阻塞的lock
+    cur_t->waiting_on_lock = lock;
+    if(!donor_already_in(&cur_t->donor_elem, &lock->holder->donors)){
+      list_push_back(&lock->holder->donors, &cur_t->donor_elem);
+    }
+  }
+  while(cur_t->waiting_on_lock != NULL){
+    holder = cur_t->waiting_on_lock->holder;
+    if(holder == NULL)break;
+    if(cur_t->priority > holder->priority){
+      holder->priority = cur_t->priority; 
+    }
+    //update the cur_t to the thread that is holding the lock that cur_t is waiting on
+    cur_t = holder;
+  }
   sema_down(&lock->semaphore);
-  lock->holder = thread_current();
+  initial_t->waiting_on_lock = NULL;
+  lock->holder = initial_t;
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -197,13 +236,32 @@ bool lock_try_acquire(struct lock* lock) {
 }
 
 /* Releases LOCK, which must be owned by the current thread.
-
+    
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to release a lock within an interrupt
    handler. */
 void lock_release(struct lock* lock) {
   ASSERT(lock != NULL);
   ASSERT(lock_held_by_current_thread(lock));
+  struct thread* cur_t = thread_current();
+  // 删除lock产生的donors
+  struct list* donors = &cur_t->donors;
+  struct list_elem* e;
+  int new_priority = cur_t->base_priority;
+  for(e = list_begin(donors);e != list_end(donors);){
+    struct list_elem* next = list_next(e);
+    struct thread* t = list_entry(e, struct thread, donor_elem);
+    if(t->waiting_on_lock == lock){
+      list_remove(&t->donor_elem);
+    }else{
+      //重新计算新的 priority
+      if(t->priority > new_priority){
+        new_priority = t->priority;
+      }
+    }
+    e = next;
+  }
+  cur_t->priority = new_priority;
 
   lock->holder = NULL;
   sema_up(&lock->semaphore);
@@ -339,8 +397,11 @@ void cond_signal(struct condition* cond, struct lock* lock UNUSED) {
   ASSERT(!intr_context());
   ASSERT(lock_held_by_current_thread(lock));
 
-  if (!list_empty(&cond->waiters))
-    sema_up(&list_entry(list_pop_front(&cond->waiters), struct semaphore_elem, elem)->semaphore);
+  if (!list_empty(&cond->waiters)) {
+    list_sort(&cond->waiters, compare_semaphore_elem, NULL);
+    struct semaphore_elem* waiter = list_entry(list_pop_front(&cond->waiters), struct semaphore_elem, elem);
+    sema_up(&waiter->semaphore);
+  }
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by
@@ -355,4 +416,27 @@ void cond_broadcast(struct condition* cond, struct lock* lock) {
 
   while (!list_empty(&cond->waiters))
     cond_signal(cond, lock);
+}
+
+
+/*(Helper) Compare the semaphore_elem used for list_insert_ordered()*/
+static bool compare_semaphore_elem(const struct list_elem* a, const struct list_elem* b, void* aux UNUSED) {
+  struct semaphore_elem* sa = list_entry(a, struct semaphore_elem, elem);
+  struct semaphore_elem* sb = list_entry(b, struct semaphore_elem, elem);
+  struct thread* ta = list_entry(list_front(&sa->semaphore.waiters), struct thread, elem);
+  struct thread* tb = list_entry(list_front(&sb->semaphore.waiters), struct thread, elem);
+
+  return ta->priority > tb->priority;
+
+}
+
+/*(Helper)Whether the donor is already in the donors list*/
+static bool donor_already_in(const struct list_elem* donor,const struct list* donor_list){
+  struct thread* t = list_entry(donor, struct thread, donor_elem);
+  struct list_elem* e;
+  for(e = list_begin(donor_list);e != list_end(donor_list);e = list_next(e)){
+    struct thread* cur = list_entry(e, struct thread, donor_elem);
+    if(cur == t)return true;
+  }
+  return false;
 }
