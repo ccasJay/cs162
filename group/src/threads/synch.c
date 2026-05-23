@@ -111,6 +111,8 @@ void sema_up(struct semaphore* sema) {
 
   old_level = intr_disable();
   if (!list_empty(&sema->waiters)){
+    //低优先级收到donation后在waiters list 中的位置变化了，需要重新排序，否则影响sema_up
+    list_sort(&sema->waiters, (list_less_func*)compare_prio, NULL);
     struct thread* t = list_entry(list_pop_front(&sema->waiters), struct thread, elem);
     thread_unblock(t);
     if(t->priority > thread_current()->priority){
@@ -234,7 +236,7 @@ bool lock_try_acquire(struct lock* lock) {
 }
 
 /* Releases LOCK, which must be owned by the current thread.
-
+    
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to release a lock within an interrupt
    handler. */
