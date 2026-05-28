@@ -64,6 +64,7 @@
     retval;                                                                                        \
   })
 
+
 int practice(int i) { return syscall1(SYS_PRACTICE, i); }
 
 void halt(void) {
@@ -116,7 +117,6 @@ bool isdir(int fd) { return syscall1(SYS_ISDIR, fd); }
 
 int inumber(int fd) { return syscall1(SYS_INUMBER, fd); }
 
-//TODO
 tid_t sys_pthread_create(stub_fun sfun, pthread_fun tfun, const void* arg) {
   return syscall3(SYS_PT_CREATE, sfun, tfun, arg);
 }

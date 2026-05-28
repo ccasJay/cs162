@@ -39,7 +39,7 @@ static void check_address(const void *vaddr){
   
   /* check the page of tail addr*/
   const void *end_addr = (const uint8_t*)vaddr + 3;
-  if(pg_round_down(vaddr) != (const uint8_t*)vaddr + 3);
+  if(pg_round_down(vaddr) != pg_round_down((const uint8_t*)vaddr + 3));
   if(pagedir_get_page(t->pcb->pagedir,end_addr) == NULL){
     printf("%s: exit(-1)\n", thread_current()->pcb->process_name);
     if(t->pcb->my_status != NULL){
@@ -68,6 +68,17 @@ static int write (int fd, const void *buffer, unsigned size);
 static void seek (int fd, unsigned position);
 static int tell (int fd);
 static int close (int fd);
+
+tid_t sys_pthread_create(stub_fun sfun, pthread_fun tfun, const void* arg) {
+  if(!is_user_vaddr(sfun) || !is_user_vaddr(tfun))return TID_ERROR;
+  return pthread_execute(sfun, tfun, arg);
+}
+
+tid_t sys_pthread_join(tid_t tid){
+  if(tid == TID_ERROR)return TID_ERROR;
+  return pthread_join(tid);
+}
+
 
 static void syscall_handler(struct intr_frame* f UNUSED) {
   uint32_t* args = ((uint32_t*)f->esp);
@@ -208,6 +219,29 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     check_address((void*)args+1);
     close((int)args[1]);
     return;
+  }
+  /*User thread*/
+
+  /* Creates a new thread */
+  if(args[0] == SYS_PT_CREATE){
+    check_address((void*)args+1);
+    check_address((void*)args+2);
+    check_address((void*)args+3);
+    f->eax = sys_pthread_create((stub_fun)args[1] , (pthread_fun)args[2] , (void*)args[3]);
+    return;
+  }
+
+  /* Pthread join*/
+  if(args[0] == SYS_PT_JOIN){
+    check_address(args + 1);
+    f->eax = sys_pthread_join((tid_t) args[1]);
+    return;
+  }
+
+  /*Pthread exit*/
+  if(args[0] == SYS_PT_EXIT){
+    pthread_exit();
+    NOT_REACHED();
   }
 
   
