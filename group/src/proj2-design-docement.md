@@ -77,3 +77,62 @@ A lock protects the process thread list and the joined/exited fields so that joi
 - `pthread_execute()` is needed as a bridge because `thread_create()` expects a
   kernel thread function, while the target `fun` is a user-level function
   pointer.
+
+
+-----------------
+## Task 2: User-level Synchronization Syscalls(lock and seamphore)
+### 1. Data Structures and Functions
+#### Modified function
+```c
+// userprog syscall.c
+// seam syscall handler
+if(args[0] == SYS_SEMA_INIT){};
+if(args[0] == SYS_SEMA_DOWN){};
+if(args[0] == SYS_SEMA_UP){};
+
+//lock syscall handler
+if(args[0] == SYS_LOCK_INIT){};
+if(args[0] == SYS_LOCK_ACQUIRED){};
+if(args[0] == SYS_LOCK_RELEASE){};
+```
+
+#### New Struct
+```c
+struct user_sema{
+  sema_t *user_addr;
+  struct semaphore sema;
+  struct list_elem elem;
+}
+
+struct user_lock{
+  lock_t *user_addr;
+  struct lock lock;
+  struct list_elem elem;
+}
+```
+#### Modified Struct
+```c
+struct process{
+  ...
+  struct list user_locks;
+  struct list user_semas;
+  struct lock user_sync_lock; //protect the user-level sync control table
+}
+```
+
+#### New funciton
+```c
+bool sys_lock_init(lock_t* lock);
+bool sys_lock_acquire(lock_t* lock);
+bool sys_lock_release(lock_t* lock);
+
+bool sys_sema_init(sema_t* sema, int val);
+bool sys_sema_up(sema_t* sema);
+bool sys_sema_down(sema_t* sema);
+```
+
+### 2. Algorithms
+- In the syscall_handler , first check the address when the syscall is called ,then call the corresponding `sys_*` function which will call the kernel function such as `sema_up()`
+
+### 3. Synchronization
+- Add the `struct lock user_sync_lock` to protect the user-level synchronization control tables (`user_locks` and `user_semas`) in the process struct. This ensures that multiple threads can safely create and manipulate user-level locks and semaphores
