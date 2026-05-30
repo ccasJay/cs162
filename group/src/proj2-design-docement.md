@@ -94,18 +94,21 @@ if(args[0] == SYS_SEMA_UP){};
 if(args[0] == SYS_LOCK_INIT){};
 if(args[0] == SYS_LOCK_ACQUIRED){};
 if(args[0] == SYS_LOCK_RELEASE){};
+
+if(args[0] == SYS_GET_TID){};
 ```
+
 
 #### New Struct
 ```c
 struct user_sema{
-  sema_t *user_addr;
+  void *user_addr;
   struct semaphore sema;
   struct list_elem elem;
 }
 
 struct user_lock{
-  lock_t *user_addr;
+  void *user_addr;
   struct lock lock;
   struct list_elem elem;
 }
@@ -122,17 +125,21 @@ struct process{
 
 #### New funciton
 ```c
-bool sys_lock_init(lock_t* lock);
-bool sys_lock_acquire(lock_t* lock);
-bool sys_lock_release(lock_t* lock);
+bool sys_lock_init(void* lock);
+bool sys_lock_acquire(void* lock);
+bool sys_lock_release(void* lock);
 
-bool sys_sema_init(sema_t* sema, int val);
-bool sys_sema_up(sema_t* sema);
-bool sys_sema_down(sema_t* sema);
+bool sys_sema_init(void* sema, int val);
+bool sys_sema_up(void* sema);
+bool sys_sema_down(void* sema);
+
+tid_t sys_get_tid();
 ```
+- The particular logic of `sys_*` functions moved to the `userprog/sysfunc.c` 
 
 ### 2. Algorithms
 - In the syscall_handler , first check the address when the syscall is called ,then call the corresponding `sys_*` function which will call the kernel function such as `sema_up()`
+- `sys_get_tid()` called by `get_tid()` in the user-level, then it call the kernel-level function ` thread_tid()` 
 
 ### 3. Synchronization
 - Add the `struct lock user_sync_lock` to protect the user-level synchronization control tables (`user_locks` and `user_semas`) in the process struct. This ensures that multiple threads can safely create and manipulate user-level locks and semaphores

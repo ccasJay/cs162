@@ -12,6 +12,7 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "devices/input.h"
+#include "userprog/sysfunc.h"
 
 static void syscall_handler(struct intr_frame*);
 
@@ -69,15 +70,7 @@ static void seek (int fd, unsigned position);
 static int tell (int fd);
 static int close (int fd);
 
-tid_t sys_pthread_create(stub_fun sfun, pthread_fun tfun, const void* arg) {
-  if(!is_user_vaddr(sfun) || !is_user_vaddr(tfun))return TID_ERROR;
-  return pthread_execute(sfun, tfun, arg);
-}
 
-tid_t sys_pthread_join(tid_t tid){
-  if(tid == TID_ERROR)return TID_ERROR;
-  return pthread_join(tid);
-}
 
 
 static void syscall_handler(struct intr_frame* f UNUSED) {
@@ -243,6 +236,23 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     pthread_exit();
     NOT_REACHED();
   }
+
+  /* User synchronization*/
+  // seam syscall handler
+  if(args[0] == SYS_SEMA_INIT){
+    check_address((void*)args + 1);
+    sys_sema_init((void*)args[1],args[2]);
+    return;
+  };
+  if(args[0] == SYS_SEMA_DOWN){};
+  if(args[0] == SYS_SEMA_UP){};
+  
+  //lock syscall handler
+  if(args[0] == SYS_LOCK_INIT){};
+  if(args[0] == SYS_LOCK_ACQUIRE){};
+  if(args[0] == SYS_LOCK_RELEASE){};
+
+  if(args[0] == SYS_GET_TID){};
 
   
 

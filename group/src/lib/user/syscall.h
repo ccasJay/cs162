@@ -51,6 +51,14 @@ void sys_pthread_exit(void) NO_RETURN;
 /*Suspends the calling thread until the thread with TID tid finishes. Returns the TID of the thread waited on, or TID_ERROR if the thread could not be joined on. It is only valid to join on threads that are part of the same process and have not yet been joined on. It is valid to join on a thread that was part of the same process, but has already terminated – in such cases, the sys_pthread_join call should not block. Any thread can join on any other thread (the main thread included). If a thread joins on main, it should be woken up and allowed to run after main calls pthread_exit but before the process is killed*/
 tid_t sys_pthread_join(tid_t tid);
 
+bool sys_lock_init(void* lock);
+bool sys_lock_acquire(void* lock);
+bool sys_lock_release(void* lock);
+
+bool sys_sema_init(void* sema, int val);
+bool sys_sema_up(void* sema);
+bool sys_sema_down(void* sema);
+
 /*Initializes lock, where lock is a pointer to a lock_t in userspace. Returns true if initialization was successful. You do not have to handle the case where lock_init is called on the same argument twice; you can assume that the result of doing so is undefined behavior.*/
 bool lock_init(lock_t* lock);
 

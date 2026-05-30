@@ -40,6 +40,7 @@ struct process {
   struct file* executable;    /* The executable file, kept open for deny_write */
   struct list pthreads;
   struct lock pthread_lock;
+  struct list semas;
 };
 
 
@@ -133,6 +134,26 @@ struct user_thread_args{
    struct semaphore join_sema;
    struct list_elem elem;
  };
+
+ /**
+  * @brief The user thread semaphore
+  * 
+  */
+  struct user_sema{
+   void *user_addr;
+   struct semaphore sema;
+   struct list_elem elem;
+};
+
+/**
+ * @brief The user thread lock
+ * 
+ */
+  struct user_lock{
+   void *user_addr;
+   struct lock lock;
+   struct list_elem elem;
+};
 
 void userprog_init(void);
 
