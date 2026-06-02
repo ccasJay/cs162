@@ -120,7 +120,7 @@ bool sys_lock_acquire(void *lock){
   struct user_lock* ul = find_user_lock(&t->pcb->user_locks, lock);
   lock_release(&t->pcb->user_sync_lock);
   if(ul == NULL)return false;
-  if(lock_holded_by_cur_t(ul))return false;
+  if(lock_holded_by_cur_t(&ul->lock))return false;
   lock_acquire(&ul->lock);
   return true;
 }
@@ -130,7 +130,8 @@ bool sys_lock_release(void *lock){
   struct thread* t = thread_current();
   lock_acquire(&t->pcb->user_sync_lock);
   struct user_lock* ul = find_user_lock(&t->pcb->user_locks, lock);
-  if(ul == NULL)return false;
+  if(ul == NULL || ul->lock.holder == NULL)return false;
+  if(!lock_holded_by_cur_t(&ul->lock))return false;
   lock_release(&t->pcb->user_sync_lock);
   lock_release(&ul->lock);
   return true;
