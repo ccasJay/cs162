@@ -133,7 +133,6 @@ bool sys_sema_init(void* sema, int val);
 bool sys_sema_up(void* sema);
 bool sys_sema_down(void* sema);
 
-tid_t sys_get_tid();
 ```
 - The particular logic of `sys_*` functions moved to the `userprog/sysfunc.c` 
 

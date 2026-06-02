@@ -241,20 +241,42 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
   // seam syscall handler
   if(args[0] == SYS_SEMA_INIT){
     check_address((void*)args + 1);
-    sys_sema_init((void*)args[1],args[2]);
+    check_address((void*)args + 2);
+    f->eax = sys_sema_init((void*)args[1],args[2]);
     return;
   };
-  if(args[0] == SYS_SEMA_DOWN){};
-  if(args[0] == SYS_SEMA_UP){};
+  if(args[0] == SYS_SEMA_DOWN){
+    check_address((void*)args + 1);
+    f->eax = sys_sema_down((void*)args[1]);
+    return;
+  };
+  if(args[0] == SYS_SEMA_UP){
+    check_address((void*)args + 1);
+    f -> eax = sys_sema_up((void*)args[1]);
+    return;
+  };
   
   //lock syscall handler
-  if(args[0] == SYS_LOCK_INIT){};
-  if(args[0] == SYS_LOCK_ACQUIRE){};
-  if(args[0] == SYS_LOCK_RELEASE){};
+  if(args[0] == SYS_LOCK_INIT){
+    check_address((void*)args + 1);
+    f->eax = sys_lock_init((void*)args[1]);
+    return;
+  };
+  if(args[0] == SYS_LOCK_ACQUIRE){
+    check_address((void*)args + 1);
+    f->eax = sys_lock_acquire((void*)args[1]);
+    return;
+  };
+  if(args[0] == SYS_LOCK_RELEASE){
+    check_address((void*)args + 1);
+    f->eax = sys_lock_release((void*)args[1]);
+    return;
+  };
 
-  if(args[0] == SYS_GET_TID){};
-
-  
+  if(args[0] == SYS_GET_TID){
+    f->eax = thread_tid();
+    return;
+  };
 
 }
 

@@ -40,7 +40,9 @@ struct process {
   struct file* executable;    /* The executable file, kept open for deny_write */
   struct list pthreads;
   struct lock pthread_lock;
-  struct list semas;
+  struct list user_semas;
+  struct list user_locks;
+  struct lock user_sync_lock;
 };
 
 

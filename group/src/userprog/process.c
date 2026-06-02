@@ -429,7 +429,10 @@ static void start_process(void* file_name_) {
     list_init(&new_pcb->children);
     list_init(&new_pcb->fds);
     list_init(&new_pcb->pthreads);
+    list_init(&new_pcb->user_locks);
+    list_init(&new_pcb->user_semas);
     lock_init(&new_pcb->pthread_lock);
+    lock_init(&new_pcb->user_sync_lock);
     new_pcb->next_fd = 2;
     new_pcb->executable = NULL;
   }
@@ -595,6 +598,17 @@ void process_exit(void) {
     file_close(entry->file);
     lock_release(&filesys_lock);
     free(entry);
+  }
+  /* Free the user sync object*/
+  while(!list_empty(&cur->pcb->user_locks)){
+    struct list_elem *e = list_pop_front(&cur->pcb->user_locks);
+    struct user_lock *ul = list_entry(e, struct user_lock, elem);
+    free(ul);
+  }
+  while(!list_empty(&cur->pcb->user_semas)){
+    struct list_elem *e = list_pop_front(&cur->pcb->user_semas);
+    struct user_sema *us = list_entry(e, struct user_sema, elem);
+    free(us);
   }
 
   /* Destroy the current process's page directory and switch back
