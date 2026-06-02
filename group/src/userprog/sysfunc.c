@@ -43,6 +43,17 @@ struct user_sema* find_user_sema(struct list* list, void* user_addr){
   return NULL;
 }
 
+/**
+ * @brief Whether the lock is holded by the current thread
+ * 
+ * @param lock 
+ * @return bool 
+ */
+ bool lock_holded_by_cur_t(const struct lock* lock){
+  ASSERT(lock != NULL);
+  return lock->holder == thread_current();
+ }
+
 
 tid_t sys_pthread_create(stub_fun sfun, pthread_fun tfun, void* arg) {
   if(!is_user_vaddr(sfun) || !is_user_vaddr(tfun))return TID_ERROR;
@@ -109,6 +120,7 @@ bool sys_lock_acquire(void *lock){
   struct user_lock* ul = find_user_lock(&t->pcb->user_locks, lock);
   lock_release(&t->pcb->user_sync_lock);
   if(ul == NULL)return false;
+  if(lock_holded_by_cur_t(ul))return false;
   lock_acquire(&ul->lock);
   return true;
 }
