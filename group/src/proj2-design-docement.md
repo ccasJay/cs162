@@ -142,3 +142,72 @@ bool sys_sema_down(void* sema);
 
 ### 3. Synchronization
 - Add the `struct lock user_sync_lock` to protect the user-level synchronization control tables (`user_locks` and `user_semas`) in the process struct. This ensures that multiple threads can safely create and manipulate user-level locks and semaphores
+
+-----
+## Task 3: User Thread Join, Main Thread Exit, and Process Wait
+
+**Goal:** Implement the correct waiting and exit behaviour of multithreadings.
+
+
+### 1. Data Structures and Functions
+
+#### Modified Functions
+
+```c
+// userprog/syscall.c
+void syscall_handler();//SYS_EXIT dispatch
+
+// userprog/process.c
+int process_wait(pid_t child_pid);
+tid_t pthread_join(tid_t tid);
+void pthread_exit_main(void);
+void pthread_exit(void);
+void start_process(void* file_name_); // allocate pthread_status for main_thread
+
+
+```
+
+#### Modified Structs
+
+```c
+struct pthread_status{
+  ...
+  void* user_stack_page;
+
+}
+```
+
+
+### 2. Algorithms
+
+#### `pthread_join(tid)`
+
+
+#### `pthread_exit()`
+- Find the user stack page of cur_t
+- Free the userspace stack(the upage)
+- Set the shared status that the cut_t is exited
+- wake any waiters on this thread.
+
+#### `start_process()` + `setup_thread()`
+- Initialize the pthread_status
+- set the user_stack_page to the upage when the upage is allocated successfully
+- dynamicly find the valid address for the userpage
+
+#### `pthread_exit_main()`
+
+
+#### `process_wait(child_pid)`
+
+
+#### `process_exit()`
+
+
+### 3. Synchronization
+
+
+### 4. Edge Cases
+
+
+### 5. Rationale
+

@@ -40,7 +40,7 @@ static void check_address(const void *vaddr){
   
   /* check the page of tail addr*/
   const void *end_addr = (const uint8_t*)vaddr + 3;
-  if(pg_round_down(vaddr) != pg_round_down((const uint8_t*)vaddr + 3));
+  if(pg_round_down(vaddr) != pg_round_down((const uint8_t*)vaddr + 3))return;
   if(pagedir_get_page(t->pcb->pagedir,end_addr) == NULL){
     printf("%s: exit(-1)\n", thread_current()->pcb->process_name);
     if(t->pcb->my_status != NULL){
@@ -184,9 +184,9 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
   //write
   if(args[0] == SYS_WRITE){
-    check_address((void*)args+1);
-    check_address((void*)args+2);
-    check_address((void*)args+3);
+    check_address(args+1);
+    check_address(args+2);
+    check_address(args+3);
 
     f->eax = write((int)args[1],(const void*)args[2],(unsigned)args[3]);
     return ;
@@ -233,7 +233,9 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
   /*Pthread exit*/
   if(args[0] == SYS_PT_EXIT){
-    pthread_exit();
+    if(is_main_thread(thread_current(), thread_current()->pcb)){
+    pthread_exit_main();
+    }else pthread_exit();
     NOT_REACHED();
   }
 

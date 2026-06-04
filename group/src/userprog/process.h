@@ -135,6 +135,7 @@ struct user_thread_args{
    bool joined;
    struct semaphore join_sema;
    struct list_elem elem;
+   void* user_stack_page;
  };
 
  /**

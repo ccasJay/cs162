@@ -9,3 +9,4 @@ group/src/userprog/compile_commands.json
 # clangd index/cache files
 group/.cache/
 group/src/userprog/.cache/
+group/src/cache/projects.json

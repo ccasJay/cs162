@@ -435,6 +435,18 @@ static void start_process(void* file_name_) {
     lock_init(&new_pcb->user_sync_lock);
     new_pcb->next_fd = 2;
     new_pcb->executable = NULL;
+
+    // Allocate a pthread_status to the main_thread
+    struct pthread_status *main_status = malloc(sizeof(*main_status));
+    main_status->tid = thread_tid();
+    main_status->exited = false;
+    main_status->joined = false;
+    main_status->user_stack_page = NULL;
+    sema_init(&main_status->join_sema, 0);
+
+    thread_current()->pthread_status = main_status;
+    list_push_back(&thread_current()->pcb->pthreads, &main_status->elem);
+
   }
 
   /* Initialize interrupt frame and load executable. */
@@ -973,6 +985,18 @@ bool is_main_thread(struct thread* t, struct process* p) { return p->main_thread
 /* Gets the PID of a process */
 pid_t get_pid(struct process* p) { return (pid_t)p->main_thread->tid; }
 
+/**
+ * @brief (Helper)find the free stack page address
+ */
+ void* find_free_stack_page(struct process* pcb){
+    for(int i = 2; i < MAX_STACK_PAGES; i++){
+      void* upage = (uint8_t*)PHYS_BASE - i * PGSIZE;
+
+      if(pagedir_get_page(pcb->pagedir, upage) == NULL)return upage;
+    }
+    return NULL;
+ }
+
 /* Creates a new stack for the thread and sets up its arguments.
    Stores the thread's entry point into *EIP and its initial stack
    pointer into *ESP. Handles all cleanup if unsuccessful. Returns
@@ -987,13 +1011,15 @@ bool setup_thread(void (**eip)(void) , void** esp ) {
 
   kpage = palloc_get_page(PAL_USER | PAL_ZERO);
   if(kpage != NULL){
-    void* upage = ((uint8_t*)PHYS_BASE) - 2*PGSIZE;
+    void* upage = find_free_stack_page(thread_current()->pcb);
+    if(upage == NULL)return false;
     success = install_page(upage, kpage, true);
     if(!success){
       palloc_free_page(kpage);
       return false;
     }
     *esp = ((uint8_t*) PHYS_BASE)-PGSIZE;
+    thread_current()->pthread_status->user_stack_page = upage;
     return true;
   }
   return false;
@@ -1126,7 +1152,7 @@ static struct pthread_status* find_pthread_status(struct process* pcb, tid_t tid
 
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. */
-tid_t pthread_join(tid_t tid UNUSED) { 
+tid_t pthread_join(tid_t tid ) { 
     if(tid == thread_tid())return TID_ERROR;
 
     struct process* pcb = thread_current()->pcb;
@@ -1152,6 +1178,10 @@ tid_t pthread_join(tid_t tid UNUSED) {
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. */
 void pthread_exit(void) {
+  struct thread *cur_t = thread_current();
+  struct process *pcb = cur_t->pcb;
+
+  
   struct pthread_status* status = thread_current()->pthread_status;
   status->exited = true;
   sema_up(&status->join_sema);
@@ -1166,4 +1196,7 @@ void pthread_exit(void) {
 
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. */
-void pthread_exit_main(void) {}
+void pthread_exit_main(void) {
+  struct thread* t = thread_current();
+  if(!is_main_thread(t, t->pcb))return;
+}
