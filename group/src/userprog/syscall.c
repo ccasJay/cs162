@@ -1,6 +1,7 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include "stddef.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "userprog/process.h"
@@ -233,9 +234,13 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
   /*Pthread exit*/
   if(args[0] == SYS_PT_EXIT){
-    if(is_main_thread(thread_current(), thread_current()->pcb)){
-    pthread_exit_main();
-    }else pthread_exit();
+    struct thread* cur_t = thread_current();
+    struct process* pcb = cur_t->pcb;
+    if(is_main_thread(cur_t, pcb)){
+      pthread_exit_main();
+    }else{
+      pthread_exit();
+    }
     NOT_REACHED();
   }
 

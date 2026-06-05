@@ -1,5 +1,7 @@
 #include "list.h"
 #include "stdbool.h"
+#include "stddef.h"
+#include "threads/loader.h"
 #include "userprog/syscall.h"
 #include "userprog/process.h"
 #include <debug.h>
@@ -645,7 +647,6 @@ void process_exit(void) {
   struct process* pcb_to_free = cur->pcb;
   cur->pcb = NULL;
   free(pcb_to_free);
-
   thread_exit();
 }
 
@@ -1180,13 +1181,42 @@ tid_t pthread_join(tid_t tid ) {
 void pthread_exit(void) {
   struct thread *cur_t = thread_current();
   struct process *pcb = cur_t->pcb;
+  struct pthread_status* status = cur_t->pthread_status;
+  void* upage = status->user_stack_page;
+  //free the user stack
+  if(upage != NULL){
+    void* kpage = pagedir_get_page(pcb->pagedir, upage);
+    if(kpage != NULL){
+      pagedir_clear_page(pcb->pagedir, upage);
+      palloc_free_page(kpage);
+    }
+    status->user_stack_page = NULL;
+  }
 
-  
-  struct pthread_status* status = thread_current()->pthread_status;
+  lock_acquire(&pcb->pthread_lock);
   status->exited = true;
+  lock_release(&pcb->pthread_lock);
   sema_up(&status->join_sema);
   thread_exit();
 }
+/**
+ * @brief (Helper)Find a thread which is not the main_thread and unjoined
+ * @param pcb 
+ */
+ struct pthread_status* find_unjoined_t(struct process* pcb){
+    struct list_elem* e;
+    for(e = list_begin(&pcb->pthreads); e != list_end(&pcb->pthreads);){
+      struct list_elem* next = list_next(e);
+      struct pthread_status* ps = list_entry(e, struct pthread_status, elem);
+
+      bool nonmain_t = pcb->main_thread->pthread_status != ps;
+      bool is_unjoined = !ps->joined ;
+
+      if( nonmain_t && is_unjoined )return ps;
+      e = next;
+    }
+    return NULL;
+ }
 
 /* Only to be used when the main thread explicitly calls pthread_exit.
    The main thread should wait on all threads in the process to
@@ -1197,6 +1227,44 @@ void pthread_exit(void) {
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. */
 void pthread_exit_main(void) {
-  struct thread* t = thread_current();
-  if(!is_main_thread(t, t->pcb))return;
+  // check whether the cur_t is the main_thread
+  struct thread* cur_t = thread_current();
+  struct process* pcb = cur_t->pcb;
+  if(!is_main_thread(cur_t, pcb)){
+    pthread_exit();
+    NOT_REACHED();
+  }
+
+  //mark the main_status is exited
+  struct pthread_status* main_status = cur_t->pthread_status;
+  lock_acquire(&pcb->pthread_lock);
+  main_status->exited = true;
+  lock_release(&pcb->pthread_lock);
+  sema_up(&main_status->join_sema);
+
+  //wait for other threads to finish
+  while(true){
+    lock_acquire(&pcb->pthread_lock);
+    struct pthread_status* target = find_unjoined_t(pcb);
+    if(target == NULL){
+      lock_release(&pcb->pthread_lock);
+      break;
+    }
+    target->joined = true;
+    lock_release(&pcb->pthread_lock);
+    sema_down(&target->join_sema);
+
+    //防止main thread被意外free
+    if(target != pcb->main_thread->pthread_status){
+      lock_acquire(&pcb->pthread_lock);
+      list_remove(&target->elem);
+      lock_release(&pcb->pthread_lock);
+      if(pcb->my_status!= NULL){
+        pcb->my_status->exit_status = 0;
+        printf("%s: exit(%d)\n", pcb->main_thread->name, pcb->my_status->exit_status);
+      }
+      free(target);
+    }
+  }
+  process_exit();
 }

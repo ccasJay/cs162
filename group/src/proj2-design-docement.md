@@ -158,7 +158,6 @@ bool sys_sema_down(void* sema);
 void syscall_handler();//SYS_EXIT dispatch
 
 // userprog/process.c
-int process_wait(pid_t child_pid);
 tid_t pthread_join(tid_t tid);
 void pthread_exit_main(void);
 void pthread_exit(void);
@@ -173,14 +172,10 @@ void start_process(void* file_name_); // allocate pthread_status for main_thread
 struct pthread_status{
   ...
   void* user_stack_page;
-
 }
 ```
 
-
 ### 2. Algorithms
-
-#### `pthread_join(tid)`
 
 
 #### `pthread_exit()`
@@ -195,19 +190,17 @@ struct pthread_status{
 - dynamicly find the valid address for the userpage
 
 #### `pthread_exit_main()`
-
-
-#### `process_wait(child_pid)`
-
-
-#### `process_exit()`
+- check whether the cur_t is main thread
+- mark the main thread is exited and wake the other threads which joined it
+  - in part of waking the other threads joined ,we need to find it first by using a helper `find_unjoined_t(struct process* pcb)`, then set the target joined
+- let the main thread wait the other user threads to be ended
+- after all the other threads are exited, terminate the whole process `process_exit()`
 
 
 ### 3. Synchronization
+- All the behaviour of  operating list , finding  target in list, setting  the status need be protected by `pthread_lock`
 
 
-### 4. Edge Cases
-
-
-### 5. Rationale
+### 4. Rationale
+- Add the `void* user_stack_page`  because when the user stack needs to clean, we need to know where the user stack page located in, so we recorded it when the page is allocated.
 
