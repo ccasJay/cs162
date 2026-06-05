@@ -153,9 +153,15 @@ static void start_fork(void* aux_passedin){
     new_pcb->my_status=cs;
     new_pcb->main_thread = current_t;
     new_pcb->executable = NULL;
+    list_init(&new_pcb->fds);
+    list_init(&new_pcb->pthreads);
+    list_init(&new_pcb->children);
+    list_init(&new_pcb->user_semas);
+    list_init(&new_pcb->user_locks);
+    lock_init(&new_pcb->pthread_lock);
+    lock_init(&new_pcb->user_sync_lock);
     /* Inherit the parent's thread name*/
     strlcpy(new_pcb->process_name, parent_t->name,sizeof(parent_t->name));
-    list_init(&new_pcb->children);
     
     new_pcb->pagedir = pagedir_create();
     success = new_pcb->pagedir != NULL;
@@ -1019,7 +1025,7 @@ bool setup_thread(void (**eip)(void) , void** esp ) {
       palloc_free_page(kpage);
       return false;
     }
-    *esp = ((uint8_t*) PHYS_BASE)-PGSIZE;
+    *esp = (uint8_t*) upage + PGSIZE;
     thread_current()->pthread_status->user_stack_page = upage;
     return true;
   }
