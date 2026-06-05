@@ -1303,12 +1303,12 @@ void pthread_exit_main(void) {
       lock_acquire(&pcb->pthread_lock);
       list_remove(&target->elem);
       lock_release(&pcb->pthread_lock);
-      if(pcb->my_status!= NULL){
-        pcb->my_status->exit_status = 0;
-        printf("%s: exit(%d)\n", pcb->main_thread->name, pcb->my_status->exit_status);
-      }
       free(target);
     }
   }
+  if(pcb->my_status != NULL){
+    pcb->my_status->exit_status = 0;
+  }
+  printf("%s: exit(%d)\n", pcb->process_name, 0);
   process_exit();
 }
