@@ -195,26 +195,52 @@ void lock_acquire(struct lock* lock) {
   ASSERT(!lock_held_by_current_thread(lock));
   struct thread* initial_t = thread_current();
   struct thread* cur_t = initial_t;
-  struct thread* holder ;
-  if(lock->holder != NULL){
+  struct thread* holder = lock->holder;
+  enum intr_level old_level = intr_disable();
+  if(holder != NULL){
     //目前导致阻塞的lock
     cur_t->waiting_on_lock = lock;
-    if(!donor_already_in(&cur_t->donor_elem, &lock->holder->donors)){
-      list_push_back(&lock->holder->donors, &cur_t->donor_elem);
+    if(!donor_already_in(&cur_t->donor_elem, &holder->donors)){
+      list_push_back(&holder->donors, &cur_t->donor_elem);
     }
   }
   while(cur_t->waiting_on_lock != NULL){
     holder = cur_t->waiting_on_lock->holder;
     if(holder == NULL)break;
     if(cur_t->priority > holder->priority){
-      holder->priority = cur_t->priority; 
+      holder->priority = cur_t->priority;
     }
     //update the cur_t to the thread that is holding the lock that cur_t is waiting on
     cur_t = holder;
   }
+  intr_set_level(old_level);
   sema_down(&lock->semaphore);
+  old_level = intr_disable();
   initial_t->waiting_on_lock = NULL;
   lock->holder = initial_t;
+
+  /* Inherit the remaining waiters on this lock's semaphore.
+     This thread is now the lock holder, so all threads still
+     blocked on the semaphore should donate their priority to us. */
+  {
+    struct list* wait_list = &lock->semaphore.waiters;
+    struct list_elem* e;
+    for (e = list_begin(wait_list); e != list_end(wait_list);
+         e = list_next(e)) {
+      struct thread* w = list_entry(e, struct thread, elem);
+      /* w is still waiting for this lock; ensure its donation
+         now targets the new holder (initial_t). */
+      w->waiting_on_lock = lock;
+      if (!donor_already_in(&w->donor_elem, &initial_t->donors)) {
+        list_push_back(&initial_t->donors, &w->donor_elem);
+      }
+      if (w->priority > initial_t->priority) {
+        initial_t->priority = w->priority;
+      }
+    }
+  }
+
+  intr_set_level(old_level);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -223,8 +249,7 @@ void lock_acquire(struct lock* lock) {
 
    This function will not sleep, so it may be called within an
    interrupt handler. */
-bool lock_try_acquire(struct lock* lock) {
-  bool success;
+bool lock_try_acquire(struct lock* lock) { bool success;
 
   ASSERT(lock != NULL);
   ASSERT(!lock_held_by_current_thread(lock));
@@ -244,6 +269,7 @@ void lock_release(struct lock* lock) {
   ASSERT(lock != NULL);
   ASSERT(lock_held_by_current_thread(lock));
   struct thread* cur_t = thread_current();
+  enum intr_level old_level = intr_disable();
   // 删除lock产生的donors
   struct list* donors = &cur_t->donors;
   struct list_elem* e;
@@ -264,6 +290,7 @@ void lock_release(struct lock* lock) {
   cur_t->priority = new_priority;
 
   lock->holder = NULL;
+  intr_set_level(old_level);
   sema_up(&lock->semaphore);
 }
 

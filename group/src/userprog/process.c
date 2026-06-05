@@ -582,6 +582,41 @@ int process_wait(pid_t child_pid ) {
   free(cs);
   return exit_status;  
 }
+/**
+ * @brief (Helper)wait other pthreads before process exit
+ * @param pcb the pcb of the current process
+ */
+ static void wait_other_pthreads(struct process* pcb){
+  struct thread* cur_t = thread_current();
+
+  while(true){
+    lock_acquire(&pcb->pthread_lock);
+
+    struct pthread_status* target = NULL;
+    struct list_elem* e;
+
+    for(e = list_begin(&pcb->pthreads); e != list_end(&pcb->pthreads);e = list_next(e)){
+      struct pthread_status* ps = list_entry(e, struct pthread_status, elem);
+
+      if(ps != cur_t->pthread_status && !ps->exited && !ps->joined){
+        ps->joined = true;
+        target = ps;
+        break;
+      }
+    }
+    lock_release(&pcb->pthread_lock);
+    if(target == NULL)break;
+
+    sema_down(&target->join_sema);
+
+    lock_acquire(&pcb->pthread_lock);
+    list_remove(&target->elem);
+    lock_release(&pcb->pthread_lock);
+
+    free(target);
+
+  }
+ }
 
 /* Free the current process's resources. */
 void process_exit(void) {
@@ -592,6 +627,9 @@ void process_exit(void) {
   if (cur->pcb == NULL) {
     thread_exit();
     NOT_REACHED();
+  }
+  if(is_main_thread(cur, cur->pcb)){
+    wait_other_pthreads(cur->pcb);
   }
 
   /*the current process's child_status*/
