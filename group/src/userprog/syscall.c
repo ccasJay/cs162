@@ -41,7 +41,15 @@ static void check_address(const void *vaddr){
   
   /* check the page of tail addr*/
   const void *end_addr = (const uint8_t*)vaddr + 3;
-  if(pg_round_down(vaddr) != pg_round_down((const uint8_t*)vaddr + 3))return;
+  if(pg_round_down(vaddr) != pg_round_down(end_addr)){
+    if(pagedir_get_page(t->pcb->pagedir, end_addr) == NULL){
+      printf("%s: exit(-1)\n", thread_current()->pcb->process_name);
+      if(t->pcb->my_status != NULL){
+        t->pcb->my_status->exit_status = -1;
+      }
+      process_exit();
+    }
+  }
   if(pagedir_get_page(t->pcb->pagedir,end_addr) == NULL){
     printf("%s: exit(-1)\n", thread_current()->pcb->process_name);
     if(t->pcb->my_status != NULL){
