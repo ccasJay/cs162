@@ -1,6 +1,7 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include "stddef.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "userprog/process.h"
@@ -12,16 +13,28 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "devices/input.h"
+#include "userprog/sysfunc.h"
 
 static void syscall_handler(struct intr_frame*);
+/**
+ * @brief (Helper) check_address exit function
+ * 
+ */
+ static void exit_with_error(void){
+  struct thread* cur_t = thread_current();
+  struct process* pcb = cur_t->pcb;
+
+  printf("%s: exit(-1)\n", thread_current()->pcb->process_name);
+  if(thread_current()->pcb->my_status != NULL)
+    thread_current()->pcb->my_status->exit_status = -1;
+  process_exit();
+  NOT_REACHED();
+ }
 
 /*check whether the address is valid*/
 static void check_address(const void *vaddr){
   if(vaddr == NULL || !is_user_vaddr(vaddr) || !is_user_vaddr((const uint8_t*)vaddr+3)){
-    printf("%s: exit(-1)\n", thread_current()->pcb->process_name);
-    if(thread_current()->pcb->my_status != NULL)
-      thread_current()->pcb->my_status->exit_status = -1;
-    process_exit();
+    exit_with_error();
   }
 
   /* Check whether the vaddr is already mapped. If not , there'll be someting wrong when user accessed the vaddr*/
@@ -29,25 +42,20 @@ static void check_address(const void *vaddr){
   if(t->pcb != NULL && t->pcb->pagedir != NULL){
     /*check the page of initial addr*/
     if(pagedir_get_page(t->pcb->pagedir,vaddr) == NULL){
-      printf("%s: exit(-1)\n", thread_current()->pcb->process_name);
-      if(t->pcb->my_status != NULL){
-        t->pcb->my_status->exit_status = -1;
-      }
-      process_exit();
+      exit_with_error();
     }
   }
   
   /* check the page of tail addr*/
   const void *end_addr = (const uint8_t*)vaddr + 3;
-  if(pg_round_down(vaddr) != (const uint8_t*)vaddr + 3);
-  if(pagedir_get_page(t->pcb->pagedir,end_addr) == NULL){
-    printf("%s: exit(-1)\n", thread_current()->pcb->process_name);
-    if(t->pcb->my_status != NULL){
-      t->pcb->my_status->exit_status = -1;
+  if(pg_round_down(vaddr) != pg_round_down(end_addr)){
+    if(pagedir_get_page(t->pcb->pagedir, end_addr) == NULL){
+      exit_with_error();
     }
-    process_exit();
   }
-  
+  if(pagedir_get_page(t->pcb->pagedir,end_addr) == NULL){
+    exit_with_error();
+  }
 }
 
 
@@ -68,6 +76,9 @@ static int write (int fd, const void *buffer, unsigned size);
 static void seek (int fd, unsigned position);
 static int tell (int fd);
 static int close (int fd);
+
+
+
 
 static void syscall_handler(struct intr_frame* f UNUSED) {
   uint32_t* args = ((uint32_t*)f->esp);
@@ -180,9 +191,9 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
   //write
   if(args[0] == SYS_WRITE){
-    check_address((void*)args+1);
-    check_address((void*)args+2);
-    check_address((void*)args+3);
+    check_address(args+1);
+    check_address(args+2);
+    check_address(args+3);
 
     f->eax = write((int)args[1],(const void*)args[2],(unsigned)args[3]);
     return ;
@@ -209,8 +220,76 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     close((int)args[1]);
     return;
   }
+  /*User thread*/
 
+  /* Creates a new thread */
+  if(args[0] == SYS_PT_CREATE){
+    check_address((void*)args+1);
+    check_address((void*)args+2);
+    check_address((void*)args+3);
+    f->eax = sys_pthread_create((stub_fun)args[1] , (pthread_fun)args[2] , (void*)args[3]);
+    return;
+  }
+
+  /* Pthread join*/
+  if(args[0] == SYS_PT_JOIN){
+    check_address(args + 1);
+    f->eax = sys_pthread_join((tid_t) args[1]);
+    return;
+  }
+
+  /*Pthread exit*/
+  if(args[0] == SYS_PT_EXIT){
+    struct thread* cur_t = thread_current();
+    struct process* pcb = cur_t->pcb;
+    if(is_main_thread(cur_t, pcb)){
+      pthread_exit_main();
+    }else{
+      pthread_exit();
+    }
+    NOT_REACHED();
+  }
+
+  /* User synchronization*/
+  // seam syscall handler
+  if(args[0] == SYS_SEMA_INIT){
+    check_address((void*)args + 1);
+    check_address((void*)args + 2);
+    f->eax = sys_sema_init((void*)args[1],args[2]);
+    return;
+  };
+  if(args[0] == SYS_SEMA_DOWN){
+    check_address((void*)args + 1);
+    f->eax = sys_sema_down((void*)args[1]);
+    return;
+  };
+  if(args[0] == SYS_SEMA_UP){
+    check_address((void*)args + 1);
+    f -> eax = sys_sema_up((void*)args[1]);
+    return;
+  };
   
+  //lock syscall handler
+  if(args[0] == SYS_LOCK_INIT){
+    check_address((void*)args + 1);
+    f->eax = sys_lock_init((void*)args[1]);
+    return;
+  };
+  if(args[0] == SYS_LOCK_ACQUIRE){
+    check_address((void*)args + 1);
+    f->eax = sys_lock_acquire((void*)args[1]);
+    return;
+  };
+  if(args[0] == SYS_LOCK_RELEASE){
+    check_address((void*)args + 1);
+    f->eax = sys_lock_release((void*)args[1]);
+    return;
+  };
+
+  if(args[0] == SYS_GET_TID){
+    f->eax = thread_tid();
+    return;
+  };
 
 }
 

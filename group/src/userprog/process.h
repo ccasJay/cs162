@@ -1,6 +1,8 @@
 #ifndef USERPROG_PROCESS_H
 #define USERPROG_PROCESS_H
 
+#include "list.h"
+#include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/interrupt.h"
 #include <stdint.h>
@@ -36,6 +38,11 @@ struct process {
   int next_fd;
   
   struct file* executable;    /* The executable file, kept open for deny_write */
+  struct list pthreads;
+  struct lock pthread_lock;
+  struct list user_semas;
+  struct list user_locks;
+  struct lock user_sync_lock;
 };
 
 
@@ -98,10 +105,7 @@ struct exec_aux{
    struct child_status *child_status;
 };
 
-/**
- * the struct to keep track of the children status in the parent process
- * 
- */
+
 struct child_status{
    pid_t pid; 
    int exit_status;
@@ -109,6 +113,51 @@ struct child_status{
    struct semaphore wait_sema;// Semaphore to block parent until child exits
    struct list_elem elem;
 };
+/**
+ * @brief the arguments used by user-thread (pthread)
+ * 
+ */
+struct user_thread_args{
+  stub_fun sfun;
+  pthread_fun fun;
+  void* arg;
+  struct process* pcb;
+  struct pthread_status* status;
+};
+
+/**
+ * @brief The shared status between the each user thread inside on process.
+ * 
+ */
+ struct pthread_status{
+   tid_t tid;
+   bool exited;
+   bool joined;
+   struct semaphore join_sema;
+   struct list_elem elem;
+   void* user_stack_page;
+ };
+
+ /**
+  * @brief The user thread semaphore
+  * 
+  */
+  struct user_sema{
+   void *user_addr;
+   struct semaphore sema;
+   struct list_elem elem;
+};
+
+/**
+ * @brief The user thread lock
+ * 
+ */
+  struct user_lock{
+   void *user_addr;
+   struct lock lock;
+   struct list_elem elem;
+};
+
 void userprog_init(void);
 
 int process_alloc_fd(struct file *f);

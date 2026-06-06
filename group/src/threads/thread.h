@@ -109,6 +109,8 @@ struct thread {
 
   /* Owned by time.c*/
   int64_t wake_tick;
+
+  struct pthread_status* pthread_status;
 };
 
 /* Types of scheduler that the user can request the kernel
