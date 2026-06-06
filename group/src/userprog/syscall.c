@@ -16,14 +16,25 @@
 #include "userprog/sysfunc.h"
 
 static void syscall_handler(struct intr_frame*);
+/**
+ * @brief (Helper) check_address exit function
+ * 
+ */
+ static void exit_with_error(void){
+  struct thread* cur_t = thread_current();
+  struct process* pcb = cur_t->pcb;
+
+  printf("%s: exit(-1)\n", thread_current()->pcb->process_name);
+  if(thread_current()->pcb->my_status != NULL)
+    thread_current()->pcb->my_status->exit_status = -1;
+  process_exit();
+  NOT_REACHED();
+ }
 
 /*check whether the address is valid*/
 static void check_address(const void *vaddr){
   if(vaddr == NULL || !is_user_vaddr(vaddr) || !is_user_vaddr((const uint8_t*)vaddr+3)){
-    printf("%s: exit(-1)\n", thread_current()->pcb->process_name);
-    if(thread_current()->pcb->my_status != NULL)
-      thread_current()->pcb->my_status->exit_status = -1;
-    process_exit();
+    exit_with_error();
   }
 
   /* Check whether the vaddr is already mapped. If not , there'll be someting wrong when user accessed the vaddr*/
@@ -31,11 +42,7 @@ static void check_address(const void *vaddr){
   if(t->pcb != NULL && t->pcb->pagedir != NULL){
     /*check the page of initial addr*/
     if(pagedir_get_page(t->pcb->pagedir,vaddr) == NULL){
-      printf("%s: exit(-1)\n", thread_current()->pcb->process_name);
-      if(t->pcb->my_status != NULL){
-        t->pcb->my_status->exit_status = -1;
-      }
-      process_exit();
+      exit_with_error();
     }
   }
   
@@ -43,21 +50,12 @@ static void check_address(const void *vaddr){
   const void *end_addr = (const uint8_t*)vaddr + 3;
   if(pg_round_down(vaddr) != pg_round_down(end_addr)){
     if(pagedir_get_page(t->pcb->pagedir, end_addr) == NULL){
-      printf("%s: exit(-1)\n", thread_current()->pcb->process_name);
-      if(t->pcb->my_status != NULL){
-        t->pcb->my_status->exit_status = -1;
-      }
-      process_exit();
+      exit_with_error();
     }
   }
   if(pagedir_get_page(t->pcb->pagedir,end_addr) == NULL){
-    printf("%s: exit(-1)\n", thread_current()->pcb->process_name);
-    if(t->pcb->my_status != NULL){
-      t->pcb->my_status->exit_status = -1;
-    }
-    process_exit();
+    exit_with_error();
   }
-  
 }
 
 
