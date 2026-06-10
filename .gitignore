@@ -2,3 +2,11 @@ group/package-lock.json
 group/package.json
 personal/hw-http/compile_commands.json
 group/compile_flags.txt
+group/src/userprog/Make.vars
+group/src/compile_commands.json
+group/src/userprog/compile_commands.json
+
+# clangd index/cache files
+group/.cache/
+group/src/userprog/.cache/
+group/src/cache/projects.json

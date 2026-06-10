@@ -87,11 +87,17 @@ struct thread {
   enum thread_status status; /* Thread state. */
   char name[16];             /* Name (for debugging purposes). */
   uint8_t* stack;            /* Saved stack pointer. */
-  int priority;              /* Priority. */
+  int priority;              /* Effective Priority. */
+  int base_priority;         /* Base Priority. */
   struct list_elem allelem;  /* List element for all threads list. */
 
   /* Shared between thread.c and synch.c. */
   struct list_elem elem; /* List element. */
+
+  /* The donor list*/
+  struct list donors;
+  struct list_elem donor_elem;
+  struct lock *waiting_on_lock;
 
 #ifdef USERPROG
   /* Owned by process.c. */
@@ -100,6 +106,11 @@ struct thread {
 
   /* Owned by thread.c. */
   unsigned magic; /* Detects stack overflow. */
+
+  /* Owned by time.c*/
+  int64_t wake_tick;
+
+  struct pthread_status* pthread_status;
 };
 
 /* Types of scheduler that the user can request the kernel
@@ -148,5 +159,7 @@ int thread_get_nice(void);
 void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
+
+bool compare_prio(const struct list_elem* a,const struct list_elem* b);
 
 #endif /* threads/thread.h */

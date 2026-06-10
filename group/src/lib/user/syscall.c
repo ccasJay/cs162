@@ -64,6 +64,7 @@
     retval;                                                                                        \
   })
 
+
 int practice(int i) { return syscall1(SYS_PRACTICE, i); }
 
 void halt(void) {
